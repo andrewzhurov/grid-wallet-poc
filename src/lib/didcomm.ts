@@ -17,7 +17,6 @@ import {
 } from "didcomm"
 import DIDPeer from "./peer2"
 import { v4 as uuidv4 } from "uuid"
-import logger from "./logger"
 
 export type DID = string
 
@@ -414,13 +413,12 @@ export class DIDComm {
       from,
       message
     )
-    logger.sentMessage({ to, from, message: plaintext })
     if (!meta.messaging_service) {
       throw new Error("No messaging service found")
     }
 
     try {
-      const response = await fetch(meta.messaging_service.service_endpoint, {
+      const response = await fetch(meta.messaging_service.service_endpoint, { // use websocket if you've got one open?
         method: "POST",
         headers: {
           "Content-Type": "application/didcomm-encrypted+json",
@@ -432,12 +430,10 @@ export class DIDComm {
         const text = await response.text()
         throw new Error(`Error sending message: ${text}`)
       }
-      logger.log("Message sent successfully.")
 
       const packedResponse = await response.text()
       const unpacked = await this.unpackMessage(packedResponse)
 
-      logger.recvMessage({ to, from, message: unpacked[0].as_value() })
       return unpacked
     } catch (error) {
       console.error(error)
@@ -445,12 +441,8 @@ export class DIDComm {
   }
 
   async sendMessage(to: DID, from: DID, message: DIDCommMessage) {
-    const [plaintext, packed, meta] = await this.prepareMessage(
-      to,
-      from,
-      message
-    )
-    logger.sentMessage({ to, from, message: plaintext })
+    const [plaintext, packed, meta] = await this.prepareMessage(to, from, message)
+
     if (!meta.messaging_service) {
       throw new Error("No messaging service found")
     }
@@ -470,25 +462,9 @@ export class DIDComm {
       }
       const text = await response.text()
       console.log("Response:", text)
-      logger.log("Message sent successfully.")
+      return response
     } catch (error) {
       console.error(error)
     }
-  }
-
-  async receiveMessage(message: string): Promise<[Message, UnpackMetadata]> {
-    const unpacked = await Message.unpack(
-      message,
-      this.resolver,
-      this.secretsResolver,
-      {}
-    )
-    const plaintext = unpacked[0].as_value()
-    logger.recvMessage({
-      to: plaintext.to[0],
-      from: plaintext.from,
-      message: plaintext,
-    })
-    return unpacked
   }
 }

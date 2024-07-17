@@ -1,7 +1,6 @@
 import { DIDComm, DIDCommMessage } from "./didcomm"
 import { IMessage } from "didcomm"
 import { WorkerCommand, WorkerMessage } from "./workerTypes"
-import logger, { LogTopic, Record } from "./logger"
 
 const ctx: Worker = self as any
 
@@ -11,19 +10,14 @@ class DIDCommWorker {
   private did: string
   private ws: WebSocket
 
-  onLog(record: Record) {
-    this.postMessage({ type: "log", payload: record })
-  }
-
   init() {
-    logger.subscribe(LogTopic.LOG, this.onLog.bind(this))
     this.didcomm = new DIDComm()
     this.postMessage({ type: "init", payload: {} })
-    logger.log("Worker initialized.")
+    console.log("Worker initialized.")
   }
 
   async establishMediation({ mediatorDid }: { mediatorDid: string }) {
-    logger.log("Establishing mediation with mediator: ", mediatorDid)
+    console.log("Establishing mediation with mediator: ", mediatorDid)
     this.didForMediator = await this.didcomm.generateDidForMediator()
     {
       const [msg, meta] = await this.didcomm.sendMessageAndExpectReply(
@@ -84,6 +78,44 @@ class DIDCommWorker {
     }
   }
 
+  async connect({ mediatorDid }: { mediatorDid: string }) {
+    console.log("Connecting to mediator: ", mediatorDid)
+    const endpoint = await this.didcomm.wsEndpoint(mediatorDid)
+    console.log("Discovered WS endpoint: ", endpoint.service_endpoint)
+    this.ws = new WebSocket(endpoint.service_endpoint)
+
+    this.ws.onopen = async event => {
+      console.log("ws onopen", event)
+      const [plaintext, live, meta] = await this.didcomm.prepareMessage(
+        mediatorDid,
+        this.didForMediator,
+        {
+          type: "https://didcomm.org/messagepickup/3.0/live-delivery-change",
+          body: {
+            live_delivery: true,
+          },
+        }
+      )
+      this.ws.send(live)
+      this.postMessage({ type: "connected", payload: {} })
+    }
+
+    this.ws.onclose = event => {
+      console.log("ws onclose", event)
+      this.postMessage({ type: "disconnected", payload: {} })
+    }
+
+    this.ws.onmessage = async (event: MessageEvent<Blob>) => {
+      await this.handlePackedMessage(await event.data.text())
+    }
+
+    this.ws.onerror = event => {
+      console.log("ws onerror", event)
+      this.postMessage({ type: "error", payload: {} })
+    }
+
+  }
+
   async pickupStatus({ mediatorDid }: { mediatorDid: string }) {
     const [msg, meta] = await this.didcomm.sendMessageAndExpectReply(
       mediatorDid,
@@ -100,48 +132,9 @@ class DIDCommWorker {
     await this.handleMessage(status)
   }
 
-  async connect({ mediatorDid }: { mediatorDid: string }) {
-    logger.log("Connecting to mediator: ", mediatorDid)
-    const endpoint = await this.didcomm.wsEndpoint(mediatorDid)
-    logger.log("Discovered WS endpoint: ", endpoint.service_endpoint)
-    this.ws = new WebSocket(endpoint.service_endpoint)
-
-    this.ws.onmessage = async (event: MessageEvent<Blob>) => {
-      await this.handlePackedMessage(await event.data.text())
-    }
-    this.ws.onopen = async event => {
-      console.log("ws onopen", event)
-      const [plaintext, live, meta] = await this.didcomm.prepareMessage(
-        mediatorDid,
-        this.didForMediator,
-        {
-          type: "https://didcomm.org/messagepickup/3.0/live-delivery-change",
-          body: {
-            live_delivery: true,
-          },
-        }
-      )
-      this.ws.send(live)
-      this.postMessage({ type: "connected", payload: {} })
-    }
-    this.ws.onerror = event => {
-      console.log("ws onerror", event)
-      this.postMessage({ type: "error", payload: {} })
-    }
-    this.ws.onclose = event => {
-      console.log("ws onclose", event)
-      this.postMessage({ type: "disconnected", payload: {} })
-    }
-  }
-
   async handlePackedMessage(packed: string) {
     const [msg, meta] = await this.didcomm.unpackMessage(packed)
     const message = msg.as_value()
-    logger.recvMessage({
-      to: message.to[0],
-      from: message.from,
-      message: message,
-    })
     return await this.handleMessage(message)
   }
 
@@ -219,7 +212,7 @@ class DIDCommWorker {
     self.postMessage(message)
   }
 
-  async route(event: MessageEvent<WorkerCommand<any>>) {
+  async route(event: MessageEvent<Partial<WorkerCommand<any>>>) {
     const { type, payload } = event.data
     console.log("Worker received message: ", type)
     const method = this[type]

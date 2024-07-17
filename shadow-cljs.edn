@@ -1,0 +1,37 @@
+;; shadow-cljs configuration
+{:deps  true
+ :nrepl {:port 9000}
+
+ ;; "." for /static
+ :dev-http {3001 ["public" "."]}
+
+ :js-options {:js-package-dirs ["node_modules"]}
+
+ :builds
+ {:app {:target        :browser
+        :module-loader true
+        :js-options    {:ignore-asset-requires true
+                        :resolve               {"agent" {:target :file
+                                                         :file   "bin/src/lib/agent.js"}}}
+        :modules       {:main
+                        {:init-fn app.core/init}}
+
+        :output-dir       "./public/js"
+        :asset-path       "/public/js"
+        :release          {}
+        :compiler-options {:infer-externs      :auto
+                           :output-feature-set :es-next-in
+                           :source-map         true
+                           :externs            []
+                           :warnings           {:fn-deprecated      false
+                                                :redef              false
+                                                :invalid-arithmetic false
+                                                :undeclared-var     false}}
+        :build-hooks      [#_(shadow.hooks/git-revision-hook "--long --always --dirty")]
+        :closure-defines  {goog.debug.LOGGING_ENABLED true}
+
+        :devtools {:before-load app.core/stop  ;; before live-reloading any code call this function
+                   :after-load  app.core/start ;; after live-reloading finishes call this function
+                   :watch-path  "/static"
+                   :preloads    [devtools.preload
+                                 shadow.remote.runtime.cljs.browser]}}}}

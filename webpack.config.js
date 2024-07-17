@@ -2,7 +2,7 @@ const path = require('path');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = {
-  entry: './src/index.ts',
+  entry: './src/lib/worker.ts',
   module: {
     rules: [
       {
@@ -50,8 +50,8 @@ module.exports = {
     extensions: ['.ts', '.js'],
   },
   output: {
-    filename: 'bundle.js',
-    path: path.resolve(__dirname, 'bin'),
+    filename: 'worker.js',
+    path: path.resolve(__dirname, 'public/js'),
   },
   devtool: 'source-map',
   experiments: {

@@ -1,25 +1,25 @@
 {
+  "compileOnSave": true,
   "compilerOptions": {
-    "outDir": "./public/js/didcomm-demo/",
-    "noImplicitAny": true,
-    "module": "es2022",
     "target": "es2022",
     "lib": [
       "es2022",
       "dom",
     ],
-    "jsx": "react",
-    "allowJs": true,
-    "moduleResolution": "node",
-    "sourceMap": true
-  },
+    "module": "commonjs",
+    "resolveJsonModule": true,
 
+    "outDir": "./js/",
+    "jsx": "react",
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "allowJs": true,
+  },
   "include": [
     "src/lib/agent2.ts",
     "src/lib/workerTypes.ts",
     "src/lib/peer2.ts",
     "src/lib/didcomm.ts",
     "src/constants.ts",
-    "src/lib/worker.ts",
   ],
 }
