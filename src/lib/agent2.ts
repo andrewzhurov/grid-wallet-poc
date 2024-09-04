@@ -7,13 +7,14 @@ interface AgentConfig {
   onconnected: Function,
   ondisconnected: Function,
   onmessage: Function,
+  ondiddoc: Function,
 }
 
 interface WorkerMessageHandlers {
   [key: string]: Function;
 }
 
-export const createAgent = ({ ondid, onconnected, ondisconnected, onmessage}: Partial<AgentConfig>) => {
+export const createAgent = ({ ondid, ondiddoc, onconnected, ondisconnected, onmessage}: Partial<AgentConfig>) => {
   let worker = new Worker("./js/worker.js")
 
   const postWorkerMessage = (message: Partial<WorkerCommand<any>>) => {
@@ -33,6 +34,7 @@ export const createAgent = ({ ondid, onconnected, ondisconnected, onmessage}: Pa
     connected: onconnected,
     disconnected: ondisconnected,
     messageReceived: onmessage,
+    resolvedDIDDoc: ondiddoc,
   }
 
   const onWorkerMessage = (workerMessage: MessageEvent<WorkerMessage<any>>) => {
@@ -69,9 +71,17 @@ export const createAgent = ({ ondid, onconnected, ondisconnected, onmessage}: Pa
     })
   }
 
+  const resolveDIDDoc = async (did: DID) => {
+    postWorkerMessage({
+      type: "resolveDIDDoc",
+      payload: did
+    })
+  }
+
   return {
     connect,
     disconnect,
     sendMessage,
+    resolveDIDDoc,
   }
 }

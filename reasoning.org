@@ -1,0 +1,60 @@
+* improvements
+** start with context / exposition
+*** personal ID - like Google Account, but _yours_
+**** why?
+***** key != ID, key needs to be rotated
+***** pre-rotation
+***** persistent identifier, yours
+***** authenticity of actions you do
+***** accumulate certificates
+***** communicate trust to others
+***** access based on certificates
+***** all preserved across key-rotations
+*** group ID - collectively controlled, like a company
+
+* topic
+** TODO add member
+** TODO consensus threshold tuning
+** LATER switch consensus-keys to real keys
+** LATER sign events
+** LATER check event signatures
+* AID
+** DONE key rotation
+** TODO add member
+** TODO remove member
+** TODO derive consensus threshold and consensus-keys out of ke
+** TODO avatar & name as anchored data
+** LATER switch signing-keys and next-signing-keys to real keys
+** LATER sign ke
+** LATER check ke signatures
+* ACDC
+** TODO prettier view of vLEI certificates
+** TODO hierarchical view of vLEI certificates
+* chat
+** TODO message creator avatar & name
+** DONE unreds indicator
+** TODO fix send message button styles
+* viz
+** TODO viz in sp tip chunks
+** TODO event creator avatar & name
+** TODO position members by AID creation time
+
+
+* fitness of UI libraries
+| Components / UI Library | MUI                    | Base UI                            | Joy UI     |
+|-------------------------+------------------------+------------------------------------+------------|
+| Floating Label Input    | +                      |                                    | +          |
+| Resiziable TextArea     | - / See Base UI        | Input Multiline/ TextArea Autosize | +          |
+| Switch                  | +                      | + / Simple                         | + / Ts?    |
+| Reaction Group          | ToggleButton Exclusive |                                    |            |
+| Left Nav                | ToggleButton Vertical  | ~ Tabs Vertical / No Ts            | RB / No Ts |
+| Avatar                  | Avatar                 |                                    | +          |
+| Avatar Badge            | +                      | ~ / No Ts                          | ~ / No Ts  |
+| Icons                   | +                      |                                    |            |
+| Messages                | Virtualized List       |                                    |            |
+| Form Dialog             | +                      | + / Modal                          | + / Blur   |
+| Speed Dial              | +                      |                                    |            |
+|                         |                        |                                    |            |
+|                         |                        |                                    |            |
+|                         |                        |                                    |            |
+|                         |                        |                                    |            |

@@ -5,6 +5,7 @@ export type WorkerCommandType =
   | "disconnect"
   | "sendMessage"
   | "pickupStatus"
+  | "resolveDIDDoc"
 
 export interface WorkerCommand<T> {
   type: WorkerCommandType
@@ -19,6 +20,7 @@ export type WorkerMessageType =
   | "connected"
   | "disconnected"
   | "error"
+  | "resolvedDIDDoc"
 
 export interface WorkerMessage<T> {
   type: WorkerMessageType

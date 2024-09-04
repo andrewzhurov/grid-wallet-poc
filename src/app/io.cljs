@@ -1,9 +1,12 @@
 (ns app.io
-  (:require [utils :refer-macros [l]]
+  (:require [hashgraph.utils.core :refer-macros [defn* l letl] :as utils]
+            [hashgraph.main :as hg]
+
+            [app.state :as as]
+
             ["/lib/agent2" :refer [createAgent]]
-            [rum.core :refer [defc defcs] :as rum]
-            [cognitect.transit :as t]
-            [app.state :as as]))
+
+            [cognitect.transit :as t]))
 
 (def transit-type :json)
 (def transit-writer (t/writer transit-type))
@@ -20,7 +23,7 @@
                   (string? (:body message-raw)) (update :body #(t/read transit-reader %)))]
     message))
 
-(defn to-me? [message] (some-> message :to set (contains? @as/*my-did) boolean))
+(defn to-me? [message] (some-> message :to set (contains? @as/*my-did-peer) boolean))
 (defn handle-message [message-raw-js]
   (let [message      (message-raw-js->message message-raw-js)
         message-type (:type message)]
@@ -31,23 +34,21 @@
         (handler message)
         (js/console.warn "No message registered for message type:" message-type)))))
 
-(def aliases ["Alice" "Bob" "Charlie" "Dean"])
 (defonce agent (createAgent
                 (clj->js
                  {:ondid          (fn [did]
-                                    (l did)
-                                    (swap! as/*did->profile assoc did {:profile/did did
-                                                                       :profile/alias (rand-nth aliases)})
-                                    (reset! as/*my-did did)
+                                    (set! hg/main-creator did)
+                                    (reset! as/*my-did-peer did)
                                     (.connect agent))
                   :onconnected    (fn [] (reset! as/*connected? true))
                   :ondisconnected (fn [] (reset! as/*connected? false))
-                  :onmessage      handle-message})))
+                  :onmessage      handle-message
+                  :ondiddoc       (fn [[did did-doc]] (l [did did-doc]) (swap! as/*did->did-doc assoc did (js->clj did-doc :keywordize-keys true)))})))
 
 
-(defn send-message [did message]
+(defn send-message [to-did message]
   (->> message
        (message->message-raw-js)
-       (.sendMessage agent did)))
+       (.sendMessage agent to-did)))
 ;; TODO derive supported features out of registered handlers
 (defn reg< [type handler] (swap! as/*message-handlers assoc type handler))

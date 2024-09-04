@@ -19,9 +19,11 @@
         :output-dir       "./public/js"
         :asset-path       "/public/js"
         :release          {}
-        :compiler-options {:infer-externs      :auto
+        :compiler-options {:optimizations      :advanced
+                           ;; :optimizations      :none
+                           ;; :source-map         true
+                           :infer-externs      :auto
                            :output-feature-set :es-next-in
-                           :source-map         true
                            :externs            []
                            :warnings           {:fn-deprecated      false
                                                 :redef              false

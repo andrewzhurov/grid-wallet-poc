@@ -1,5 +1,5 @@
-import { DIDComm, DIDCommMessage } from "./didcomm"
-import { IMessage } from "didcomm"
+import { DIDComm, DIDCommMessage, DID } from "./didcomm"
+import { IMessage, DIDDoc } from "didcomm"
 import { WorkerCommand, WorkerMessage } from "./workerTypes"
 
 const ctx: Worker = self as any
@@ -38,6 +38,7 @@ class DIDCommWorker {
       const routingDid = reply.body.routing_did[0]
       this.did = await this.didcomm.generateDid(routingDid)
       this.postMessage({ type: "didGenerated", payload: this.did })
+      this.resolveDIDDoc(this.did)
     }
 
     const [msg, meta] = await this.didcomm.sendMessageAndExpectReply(
@@ -136,6 +137,12 @@ class DIDCommWorker {
     const [msg, meta] = await this.didcomm.unpackMessage(packed)
     const message = msg.as_value()
     return await this.handleMessage(message)
+  }
+
+  async resolveDIDDoc(did: DID) {
+    this.didcomm.resolve(did).then((didDoc: DIDDoc) => {
+      this.postMessage({type: "resolvedDIDDoc", payload: [did, didDoc]})
+    })
   }
 
   async handleMessage(message: IMessage) {
