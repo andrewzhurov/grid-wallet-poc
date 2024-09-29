@@ -1,5 +1,10 @@
 (ns app.utils)
 
+(def clipboard-watchable?
+  (some-> js/navigator
+          (.-clipboard)
+          (.-readText)))
+
 (defn watch-clipboard! [*stop? on-clipboard-text & [prev-clipboard-text]]
   (when-not @*stop?
     (some-> js/navigator

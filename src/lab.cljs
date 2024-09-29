@@ -1,4 +1,5 @@
-(ns lab)
+(ns lab
+  (:require [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]))
 
 (let [l (doall (range 100000))
       v (vec l)]

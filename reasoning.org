@@ -1,4 +1,73 @@
-* improvements
+* hierarchical consensus weight
+** PRO default as control weights
+*** PRO makes consensus weight config optional
+*** PRO automatically in sync with controlling keys
+*** Problem: may shoot yourself in the foot with reserved keys - they'll have consensus yet won't participate
+**** Solution: do not include keys without mailboxes
+** PRO uniform "enought weight" calculation
+** CON really not needed for consensus, what's the end-user benefit?
+** CON complicates hg voting, round calc
+** CON costlier to compute
+** CON harder to viz
+** Decision: NO, complicates, end-user benefit not found
+
+* names of control hierarchy?
+** only of control hierarchy? what about stake (hierarchy?)
+*** is stake a hierarchy?
+**** YES could use :key-event/threshold weights as consensus stake
+***** (where majority is > sum / 2; or > (sum / 2) + safety margin)
+****** they need not be mapped directly though
+******* but hierarchical support of consensus weights is nice
+***** so we have:
+****** 1. member aid hierarchy
+****** 2. consensus threshold
+******* consensus fellas / non-control aids  do not need to set init-keys
+****** 3. controlling threshold
+******* 3.1 controlling member aid hierarchy
+A subset of 1.
+So only controlling aids are leaked out, consensus aids are kept private to topic.
+
+* interactable topics syncing between devices of an AID
+** store locally on devices,topic member sends events to othes, this way they learn it
+** store in AIDs KEL, members anchor topics to their AIDs, this way you have a KEL -> you have all topics
+*** member of an AID that did not join the topic can create init key (in its KEL)
+**** then send event to topic members
+***** Problem: topic includes only initial member AIDs, they may have change since then, as well as initial members' mailboxes
+****** you need somebody online to learn latest state
+******* that can be topic members
+******** as long as you know at least 1 topic member -> you can ask to sync up
+******** Y: as long as at least 1 topic member knows you -> you get synced up
+
+* TODO consensus stake and controlling stake
+** TODO viz stake-type
+*** TODO controlling stake votes viz
+**** as filling vote circles on events
+** TODO add stake-type-toggle
+
+* TODO viz information toggles
+
+* how to color events given we color member aids?
+** gotcha: creator = pub key
+*** TODO creator as pub key
+*** TODO g$ to account for pub key
+** gotcha: same aid can be a controller under different aids
+** member-aids+event->controlling-path
+** aid-to-color+member-aid->color
+
+* is there need for a Device AID?
+** what do you do with these devices?
+*** connect to other your devices to assemble Personal AID
+*** you have an ID and you log into it from devices
+**** keys are manage in your ID
+***** so you either log in or create a new AID
+<Input: Device Name>
+<Tab: Link device>                 | <Tab: Create new AID>
+<QR code>                          | <Input: AID Name>
+or <Scan QR code>                  |
+or <Button: Link Request>          | <Button: Create>
+
+
+* show-and-tell improvements
 ** start with context / exposition
 *** personal ID - like Google Account, but _yours_
 **** why?
@@ -11,6 +80,17 @@
 ***** access based on certificates
 ***** all preserved across key-rotations
 *** group ID - collectively controlled, like a company
+
+* how to use "how to reach me"?
+** one mailbox per AID
+*** still will need to rotate it
+**** anchor mailbox in KEL
+***** need to sync this cred with contacts
+****** could make it a public ACDC
+******* then you can sync KEL with contacts
+******** +1, as we'll need it for control update notification
+******* -1, may want to contractually protect it, e.g., forbit contacts from sharing it
+******** how's that gonna protect you?
 
 * topic
 ** TODO add member
@@ -38,7 +118,10 @@
 ** TODO viz in sp tip chunks
 ** TODO event creator avatar & name
 ** TODO position members by AID creation time
-
+** TODO move accept-connect-invite & +G to contacts&groups nav
+** TODO Promote to AID action on groups only
+** TODO viz groups as squares
+** TODO viz multisig AIDs as rounded squares
 
 * fitness of UI libraries
 | Components / UI Library | MUI                    | Base UI                            | Joy UI     |

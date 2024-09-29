@@ -1,26 +1,29 @@
 (ns app.topic-viz
   (:require
-   [hashgraph.main :refer [Member Topic] :as hg]
-   [hashgraph.topic :as hgt :refer [Tape TipTaped G$]]
+   [hashgraph.main :as hg]
+   [hashgraph.topic :as hgt]
    [hashgraph.members :as hgm]
    [hashgraph.app.events :as hga-events]
    [hashgraph.app.playback :as hga-playback]
    [hashgraph.app.transitions :as hga-transitions]
    [hashgraph.app.state :as hga-state]
-   [hashgraph.app.members :as hga-members]
    [hashgraph.app.page :as hga-page]
    [hashgraph.app.view :as hga-view]
    [hashgraph.app.utils :as hga-utils]
-   [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl letl2 when-let*] :as utils]
+   [hashgraph.utils.core :refer [hash= not-neg] :refer-macros [defn* l letl letl2 when-let*] :as utils]
+   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
+   [hashgraph.utils.unique-cursor :refer [unique-cursor]]
 
    [app.styles :refer [reg-styles! shadow0 shadow1 shadow2 shadow3] :as styles]
-   [app.topic :as at]
-   [app.state :as as]
+   [app.topic :as a-topic]
+   [app.state :as a-state]
+   [app.aid :as a-aid]
 
    [rum.core :refer [defc defcs] :as rum]
    [clojure.set :as set]
    [clojure.test :refer [deftest testing is are run-tests]]
    [garden.selectors :as gs]
+   [garden.units :refer [px px- px+ px-div] :as gun]
    [malli.core :as m]
    [goog.object :as gobject]))
 
@@ -32,7 +35,7 @@
 ;; ambiguous execution order with tips-playback
 #_
 (def *topic->tips-taped
-  (rum/derived-atom [as/*topic->tip-taped] ::derive-*topic->tips-taped
+  (lazy-derived-atom [a-state/*topic->tip-taped]
     (fn [topic->tip-taped]
       (l [::derive-*topic->tips-taped topic->tip-taped])
       (->> topic->tip-taped
@@ -40,18 +43,14 @@
                   [topic (-> tip-taped tip-taped->tips-taped)]))
            (into {})))))
 
-(defn not-neg [num]
-  (when-not (neg? num)
-    num))
-
 (defonce *topic->playback (atom {}))
 (defonce *topic->viz-scroll (atom {}))
 (defonce *topic->tip-playback (atom {}))
 (defn reg-topic-sync-tip-playback-with-viz-scroll! [topic]
-  (add-watch (rum/cursor *topic->viz-scroll topic) [::sync-playback topic]
+  (add-watch (unique-cursor *topic->viz-scroll topic) [::sync-playback topic]
              (fn [_ _ old-viz-scroll new-viz-scroll]
                (l [::sync-playback old-viz-scroll new-viz-scroll])
-               (let [tip-taped                (@as/*topic->tip-taped topic)
+               (let [tip-taped                (@a-state/*topic->tip-taped topic)
                      tips-taped               (-> tip-taped tip-taped->tips-taped)
                      delta                    (- new-viz-scroll old-viz-scroll)
                      play-forward?            (pos? delta)
@@ -74,7 +73,7 @@
                                                                       (<= ahead-tip-idx tips-taped-last-idx))
                                                                  (concat (->> (subvec tips-taped ahead-tip-idx)
                                                                               l
-                                                                              (take-while #(not (hga-view/->after-viz-playback-viewbox? (l (hga-view/evt->y %)) (l new-viz-scroll)))))))
+                                                                              (take-while #(not (hga-view/->after-viz-playback-viewbox? (l (hga-view/evt->y %)) new-viz-scroll))))))
 
                          new-tips-played<*                  (concat tips-played< tips-just-played<)
                          [tips-to-behind< new-tips-played<] (->> new-tips-played<* (split-with #(hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll)))
@@ -103,7 +102,7 @@
                                                               :tips-played<   new-tips-played<
                                                               :tips-rewinded< new-tips-rewinded<})))))))
 
-(add-watch as/*topics ::reg-sync-tips-playback-with-viz-scroll
+(add-watch a-state/*topics ::reg-sync-tips-playback-with-viz-scroll
            (fn [_ _ old-topics new-topics]
              (l [::reg-sync-tips-playback-with-viz-scroll old-topics new-topics])
              (let [novel-topics (set/difference (set new-topics) (set old-topics))]
@@ -111,7 +110,8 @@
                  (reg-topic-sync-tip-playback-with-viz-scroll! novel-topic)))))
 
 
-(defn sync-tips-playback-with-playback! [{:keys [tips-behind> tips-played< tips-rewinded<]}]
+(defn sync-tips-playback-with-playback! [{:keys [tips-behind> tips-played< tips-rewinded<] :as tips-playback}]
+  (l [:sync-tips-playback-with-playback! tips-playback])
   (let [playback {:played<   (->> tips-played<
                                   (mapcat #(-> % meta :tip/novel-events))
                                   (sort-by hgt/event->depth))
@@ -125,14 +125,14 @@
     (reset! hga-playback/*playback playback)))
 
 (defn reg-topic-viz! [topic]
-  (add-watch (rum/cursor *topic->tip-playback topic) [::topic-viz topic]
+  (add-watch (unique-cursor *topic->tip-playback topic) [::topic-viz topic]
              (fn [_ _ _ new-tips-playback]
                (sync-tips-playback-with-playback! new-tips-playback))))
 
 (defn unreg-topic-viz! [topic]
-  (remove-watch (rum/cursor *topic->tip-playback topic) [::topic-viz topic]))
+  (remove-watch (unique-cursor *topic->tip-playback topic) [::topic-viz topic]))
 
-(add-watch as/*selected-topic ::syncing-tips-playback-with-playback
+(add-watch a-state/*selected-topic ::syncing-tips-playback-with-playback
            (fn [_ _ old-selected-topic new-selected-topic]
              (l [::syncing-tips-playback-with-playback old-selected-topic new-selected-topic])
              (unreg-topic-viz! old-selected-topic)
@@ -140,42 +140,38 @@
              (hgm/init-members! (-> new-selected-topic :topic-members))
              (sync-tips-playback-with-playback! (@*topic->tip-playback new-selected-topic))))
 
-(defonce *topic-viz-dom-node (atom nil))
-(add-watch as/*topic->tip-taped ::scroll-to-novel-tip-taped
+(defonce *desired-topic+viz-scroll (atom nil))
+
+(add-watch a-state/*topic->tip-taped ::scroll-to-novel-tip-taped
            (fn [_ _ old-topic->tip-taped new-topic->tip-taped]
              (l [::scroll-to-novel-tip-taped old-topic->tip-taped new-topic->tip-taped])
-             (let [novel-topic->tip-taped  (->> new-topic->tip-taped
-                                                (reduce (fn [novel-tips-taped-acc [topic new-tip-taped]]
-                                                          (cond-> novel-tips-taped-acc
-                                                            (not= (get old-topic->tip-taped topic) new-tip-taped)
-                                                            (assoc topic new-tip-taped)))
-                                                        {}))
-                   novel-topic->viz-scroll (->> novel-topic->tip-taped
-                                                (map (fn [[topic novel-tip-taped]]
-                                                       [topic (-> novel-tip-taped
-                                                                  hga-view/evt->y
-                                                                  (- hga-view/window-height)
-                                                                  (+ hga-view/members-y-end hga-view/load-area-size)
-                                                                  inc)]))
-                                                (into {}))
+             (letl2 [novel-topic->tip-taped  (->> new-topic->tip-taped
+                                                  (reduce (fn [novel-tips-taped-acc [topic new-tip-taped]]
+                                                            (cond-> novel-tips-taped-acc
+                                                              (not= (get old-topic->tip-taped topic) new-tip-taped)
+                                                              (assoc topic new-tip-taped)))
+                                                          {}))
+                     novel-topic->viz-scroll (->> novel-topic->tip-taped
+                                                  (map (fn [[topic novel-tip-taped]]
+                                                         [topic (-> novel-tip-taped
+                                                                    hga-view/evt->y
+                                                                    (- hga-view/window-height)
+                                                                    (+ hga-view/load-area-size hga-view/members-y-end)
+                                                                    inc)]))
+                                                  (into {}))
 
-                   selected-topic                   @as/*selected-topic
-                   ?novel-selected-topic-viz-scroll (novel-topic->viz-scroll selected-topic)
-                   ?topic-viz-dom-node              @*topic-viz-dom-node ;; pray it's in sync with as/*selected-topic
-                   smooth-selected?                 (and ?novel-selected-topic-viz-scroll ?topic-viz-dom-node)
-                   topic->jumping-viz-scroll        (cond-> novel-topic->viz-scroll
-                                                      smooth-selected?
-                                                      (dissoc selected-topic))]
-               (when smooth-selected?
-                 (l [:smoothly-scrolling ?topic-viz-dom-node ?novel-selected-topic-viz-scroll])
-                 (.scroll ?topic-viz-dom-node (js-obj "top" ?novel-selected-topic-viz-scroll
-                                                      "behavior" "smooth")))
+                     selected-topic                   @a-state/*selected-topic
+                     topic->jumping-viz-scroll        (dissoc novel-topic->viz-scroll selected-topic)]
+
+               (when-let [novel-selected-topic-viz-scroll (l (novel-topic->viz-scroll selected-topic))]
+                 (l (reset! *desired-topic+viz-scroll [selected-topic novel-selected-topic-viz-scroll])))
+
                (when-not (empty? topic->jumping-viz-scroll)
                  (swap! *topic->viz-scroll merge topic->jumping-viz-scroll)))))
 
 
 (def *topic->viz-tip-taped
-  (rum/derived-atom [*topic->tip-playback] ::derive-*topic->viz-tip-taped
+  (lazy-derived-atom [*topic->tip-playback]
     (fn [topic->tip-playback]
       (->> topic->tip-playback
            (map (fn [[topic tip-playback]]
@@ -184,7 +180,7 @@
            (into {})))))
 
 (def *topic->viz-cr
-  (rum/derived-atom [*topic->viz-tip-taped] ::derive-*topic->viz-cr
+  (lazy-derived-atom [*topic->viz-tip-taped]
     (fn [topic->viz-tip-taped]
       (->> topic->viz-tip-taped
            (map (fn [[topic viz-tip-taped]]
@@ -195,15 +191,15 @@
            (fn [_ _ old-topic->viz-cr new-topic->viz-cr]
              (l [::run-transitions-on-cr-change old-topic->viz-cr new-topic->viz-cr])
              (doseq [[topic new-viz-cr] new-topic->viz-cr]
-               (let [?old-viz-cr (old-topic->viz-cr topic)]
+               (let [?old-viz-cr (get old-topic->viz-cr topic)]
                  (hga-transitions/transition-on-cr-change! ?old-viz-cr new-viz-cr)))))
 
 (def *topic->viz-subjective-db
-  (rum/derived-atom [*topic->viz-tip-taped] ::derive-topic->viz-subjective-db
+  (lazy-derived-atom [*topic->viz-tip-taped]
     (fn [topic->viz-tip-taped]
       (->> topic->viz-tip-taped
            (map (fn [[topic viz-tip-taped]]
-                  [topic (at/tip-taped->subjective-db viz-tip-taped)]))
+                  [topic (a-topic/tip-taped->subjective-db viz-tip-taped)]))
            (into {})))))
 
 
@@ -211,9 +207,9 @@
 (defn topic->hg-viz-watcher-id [topic] (keyword (str "hg-viz-watcher-" (hash topic))))
 #_
 (defn reg-viz-watcher! [topic]
-  (let [*tip-taped      (rum/cursor as/*topic->tip-taped topic)
+  (let [*tip-taped      (rum/cursor a-state/*topic->tip-taped topic)
         tip-taped       (or @*tip-taped (throw (ex-info "no tip-taped is present for topic" {:topic topic})))
-        my-did-peer (or @as/*my-did-peer (throw (ex-info "my-selected-did is nil" {})))]
+        my-did-peer (or @a-state/*my-did-peer (throw (ex-info "my-selected-did is nil" {})))]
 
     (hgm/init-members! (-> tip-taped hgt/?event->creators))
     (set! hg/main-creator my-did-peer)
@@ -246,7 +242,7 @@
 
 #_
 (defn unreg-viz-watcher! [topic]
-  (let [*tape (rum/cursor as/*topic->tip-taped topic)]
+  (let [*tape (rum/cursor a-state/*topic->tip-taped topic)]
     (remove-watch *tape (-> topic topic->hg-viz-watcher-id))))
 
 
@@ -275,7 +271,6 @@
           ;; overriding :outline manually in styles
           ^js {"focusVisible" false}))
 
-
 (def topic-styles
   [[:.topic {:height :inherit
              :overflow :hidden
@@ -287,17 +282,18 @@
              :grid-template-areas "\"chat topic-viz\""}
     [:.chat {:grid-area "chat"}]
     [:.topic-viz {:grid-area        "topic-viz"
-                  :overflow-x       :hidden
-                  :overflow-y       :scroll
-                  :scrollbar-gutter "stable"
                   :position         :relative
                   :box-shadow       shadow0
+                  :overflow-y       :scroll
+                  :overflow-x       :hidden
+                  :scrollbar-gutter "stable"
+                  :scrollbar-width  hga-view/scrollbar-height ;; does not work in Safari https://developer.mozilla.org/en-US/docs/Web/CSS/scrollbar-width
                   }
      [:svg#viz]
-     [:#members {:position :sticky
+     [:#members {:position :fixed
                  :bottom   "3px"
-                 :left     "0px"
-                 :right    "0px"}
+                 ;; :right    hga-view/scrollbar-height ;; automatically included
+                 }
       [:.member
        [:.member-name {:max-width  "50px"
                        :overflow-x :hidden
@@ -305,41 +301,47 @@
                        }]]]]]])
 (reg-styles! ::topic topic-styles)
 
-(defn sync-dom-viz-scroll! [topic]
-  (l [:sync-dom-viz-scloll! topic])
-  (when-let* [topic-viz-scroll   (@*topic->viz-scroll topic)
-              topic-viz-dom-node @*topic-viz-dom-node]
-    (l [topic-viz-scroll topic-viz-dom-node])
+(defn init-topic-viz-scroll! [topic-viz-dom-node topic]
+  (l [:init-topic-viz-scroll! topic-viz-dom-node topic])
+  (when-let [topic-viz-scroll (@*topic->viz-scroll topic)]
     (.scroll topic-viz-dom-node (js-obj "top" topic-viz-scroll))))
-
 
 
 (defc topic-viz* < rum/static rum/reactive
   [topic]
-  (let [tip-taped (rum/react (rum/cursor as/*topic->tip-taped topic))
+  (let [tip-taped (rum/react (rum/cursor a-state/*topic->tip-taped topic))
         viz-width  (-> tip-taped hg/evt->max-members-across-time
                        (* hga-view/hgs-size))
         viz-height (-> tip-taped hga-view/evt->viz-height)]
-    (hga-page/viz viz-width viz-height)))
+    [:<>
+     (hga-page/viz viz-width viz-height)
+     (a-aid/topic-aids-view viz-width)]))
 
+(defonce *last-processed-topic+viz-scroll (atom nil))
 (defc topic-viz < rum/static rum/reactive
-  {:will-mount (fn [{[topic] :rum/args :as state}]
-                 (hgm/init-members! (-> topic :topic-members))
+  {#_#_:did-mount  (fn [{[topic] :rum/args :as state}]
+                 (l [:did-mount topic state])
+                 (init-topic-viz-scroll! (rum/dom-node state) topic)
                  state)
-   :did-mount  (fn [{[topic] :rum/args :as state}]
-                 (let [dom-node (rum/dom-node state)]
-                  (l [:did-mount topic state])
-                  (reset! *topic-viz-dom-node dom-node)
-                  (sync-dom-viz-scroll! topic)
-                  state))
    :did-update (fn [{[topic] :rum/args :as state}]
                  (l [:did-update topic state])
-                 (hgm/init-members! (-> topic :topic-members))
-                 (sync-dom-viz-scroll! topic)
-                 state)}
+                 (init-topic-viz-scroll! (rum/dom-node state) topic)
+                 state)
+   :after-render (fn [{[topic] :rum/args :as state}]
+                   (when-let [[desired-topic desired-viz-scroll :as desired-topic+viz-scroll] (l @*desired-topic+viz-scroll)]
+                     (let [[last-processed-topic last-processed-viz-scroll :as last-processed-topic+viz-scroll] (l @*last-processed-topic+viz-scroll)]
+                       (when (and (not= desired-topic+viz-scroll last-processed-topic+viz-scroll)
+                                  (= desired-topic topic))
+                         (l [:processing-desired-viz-scroll])
+                         (js/setTimeout (.scroll (rum/dom-node state) (js-obj "top"      desired-viz-scroll
+                                                                              "behavior" "smooth"))
+                                        0)
+                         (reset! *last-processed-topic+viz-scroll desired-topic+viz-scroll))))
+                   state)}
   [topic]
   (l [:render topic])
+  (rum/react *desired-topic+viz-scroll)
   [:div.topic-viz {:on-scroll (hga-utils/once-per-render
                                (fn [e] (l [:on-scroll]) (l (swap! *topic->viz-scroll assoc topic (-> e (.-target) (goog.object/get "scrollTop"))))))}
    (topic-viz* topic)
-   (hga-members/topic-view topic)])
+   ])

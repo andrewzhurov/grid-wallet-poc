@@ -1,10 +1,12 @@
 (ns app.topic
   (:require
-   [hashgraph.main :refer [Member Topic] :as hg]
-   [hashgraph.topic :as hgt :refer [Tape TipTaped G$]]
+   [hashgraph.main :as hg]
+   [hashgraph.topic :as hgt]
+   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
    [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl letl2] :as utils]
 
    [app.state :as as]
+   [app.control :as actrl]
 
    [rum.core :refer [defc defcs] :as rum]
    [clojure.set :as set]
@@ -25,22 +27,29 @@
         topic             (-> topic-event hg/topic)
         novel-events      [topic-event]
         topic-event-taped (hgt/tip+novel-events->tip-taped topic-event novel-events)]
-    (swap! as/*topics conj topic)
     (swap! (rum/cursor as/*topic->tip-taped topic) (fn [?tip-taped] (or ?tip-taped topic-event-taped))) ;; mayb add it via watch
     topic))
 
 (defn add-event!
-  ([partial-evt] (add-event! @as/*selected-topic partial-evt))
-  ([topic partial-evt]
+  ([partial-evt] (add-event! @as/*selected-my-aid-path @as/*selected-topic partial-evt))
+  ([topic partial-evt] (add-event! @as/*selected-my-aid-path topic partial-evt))
+  ([my-aid-path topic partial-evt]
    (swap! as/*topic->tip-taped update topic
           (fn [tip-taped]
             (let [new-tip       (cond-> (merge partial-evt
-                                               {hg/creator       @as/*my-did-peer
+                                               {hg/creator       (@actrl/*my-aid-path+topic->init-key [my-aid-path topic])
                                                 hg/creation-time (.now js/Date)})
                                   tip-taped (assoc hg/self-parent tip-taped))
                   novel-events  [new-tip]
                   new-tip-taped (hgt/tip+novel-events->tip-taped new-tip novel-events)]
               new-tip-taped)))))
+
+(hg/reg-tx-handler! :set-topic-name
+    (fn [db _ [_ topic-name]]
+      (assoc db :topic-name topic-name)))
+
+(defn set-topic-name-event! [topic topic-name]
+  (add-event! topic {:event/tx [:set-topic-name topic-name]}))
 
 
 #_
@@ -63,59 +72,58 @@
 
 
 ;; ---- subjective ----
-(def *subjective-tx-handlers (atom {}))
+(defonce *subjective-tx-handlers (atom {}))
 (defn reg-subjective-tx-handler! [subjective-tx-handler-id subjective-tx-handler]
+  (l [:regged-subjective-tx-handler subjective-tx-handler-id])
   (swap! *subjective-tx-handlers assoc subjective-tx-handler-id subjective-tx-handler))
 
-(defn apply-subjective-tx-handler [db {:event/keys [tx] :as evt}]
-  (if-let [subjective-tx-handler (get @*subjective-tx-handlers (first tx))]
-    (subjective-tx-handler db evt tx)
-    db))
+(defn apply-subjective-tx-handler [db {:event/keys [tx] :as event}]
+  (l [:apply-subjective-tx-handler db event])
+  (let [txes (hg/?tx-or-txes->?txes tx)]
+    (->> txes
+         (reduce (fn [db-acc [tx-handler-id :as tx]]
+                   (l tx)
+                   (let [?subjective-tx-handler (get (l @*subjective-tx-handlers) tx-handler-id)]
+                     (cond-> db-acc
+                       ?subjective-tx-handler (?subjective-tx-handler event tx))))
+                 db))))
 
-(def *subjective-smartcontracts (atom []))
-(defn apply-subjective-smartcontracts [subjective-db novel-event]
-  (reduce (fn [subjective-db-acc subjective-smartcontract]
-            (subjective-smartcontract subjective-db-acc novel-event))
+(defonce *post-subjective-db-handlers (atom []))
+(defn apply-post-subjective-db-handlers [subjective-db novel-tip-taped]
+  (l [:apply-post-subjective-db-handlers subjective-db novel-tip-taped])
+  (reduce (fn [subjective-db-acc post-subjective-db-handler]
+            (post-subjective-db-handler subjective-db-acc novel-tip-taped))
           subjective-db
-          @*subjective-smartcontracts))
+          @*post-subjective-db-handlers))
 
 (defn prev-subjective-db+novel-event->subjective-db
   [prev-subjective-db novel-event]
   (cond-> prev-subjective-db
-    (:event/tx novel-event) (apply-subjective-tx-handler novel-event)
-    :always                 (apply-subjective-smartcontracts novel-event)))
+    (:event/tx novel-event) (apply-subjective-tx-handler novel-event)))
 
-(defn ^:memoizing tip-taped->subjective-db [tip-taped]
-  (let [prev-subjective-db (or (some-> (hg/self-parent tip-taped) tip-taped->subjective-db)
-                               (hg/event->topic tip-taped))
-        novel-events       (-> tip-taped meta :tip/novel-events)]
-    (reduce prev-subjective-db+novel-event->subjective-db
-            prev-subjective-db
-            novel-events)))
+(defn* ^:memoizing tip-taped->subjective-db [tip-taped]
+  (letl2 [prev-subjective-db (or (some-> (hg/self-parent tip-taped) tip-taped->subjective-db)
+                                 (hg/event->topic tip-taped))
+          novel-events       (-> tip-taped meta :tip/novel-events)]
+    (-> (reduce prev-subjective-db+novel-event->subjective-db
+                prev-subjective-db
+                novel-events)
+        (apply-post-subjective-db-handlers tip-taped))))
 
 (def *topic->subjective-db
-  (rum/derived-atom [as/*topic->tip-taped] ::derive-tip-taped->subjective-db
+  (lazy-derived-atom [as/*topic->tip-taped]
     (fn [topic->tip-taped]
-      (->> topic->tip-taped
-           (map (fn [[topic tip-taped]]
-                  [topic (tip-taped->subjective-db tip-taped)]))
-           (into {})))))
-
-
-(reg-subjective-tx-handler!
- :init-control
- (fn [db _ _]
-   (assoc db :consensus-enabled? true)))
+      (l [::derive-topic->subjective-db topic->tip-taped])
+      (l (->> topic->tip-taped
+              (map (fn [[topic tip-taped]]
+                     [topic (tip-taped->subjective-db tip-taped)]))
+              (into {}))))))
 
 (defn tip-taped->consensus-enabled? [tip-taped]
   (-> tip-taped
       tip-taped->subjective-db
       :consensus-enabled?))
 
-(defn tip-taped->creator->needs-consensus? [tip-taped]
-  (if-not (tip-taped->consensus-enabled? tip-taped)
-    (fn [_] false)
-    ))
 
 ;; ---- projected ----
 ;; would be better to project cr after cr, not one big mock one
@@ -150,10 +158,11 @@
   (-> event ->projected-cr l hg/cr-db))
 
 (def *topic->projected-db
-  (rum/derived-atom [as/*topic->tip-taped] ::derive-*topic->projected-db
+  (lazy-derived-atom [as/*topic->tip-taped]
     (fn [topic->tip-taped]
-      (->> topic->tip-taped
-           (filter (fn [[_topic tip-taped]] (tip-taped->consensus-enabled? tip-taped)))
-           (map (fn [[topic tip-taped]]
-                  [topic (-> tip-taped ->projected-db)]))
-           (into {})))))
+      (l [::derive-*topic->projected-db topic->tip-taped])
+      (l (->> topic->tip-taped
+              (filter (fn [[_topic tip-taped]] (l (tip-taped->consensus-enabled? (l tip-taped)))))
+              (map (fn [[topic tip-taped]]
+                     [topic (l (-> tip-taped ->projected-db))]))
+              (into {}))))))

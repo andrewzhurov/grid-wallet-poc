@@ -1,14 +1,19 @@
 (ns app.core
   "Entry ns for the browser app"
   {:dev/always true}
-  (:require [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl] :as utils]
+  (:require [hashgraph.main :as hg]
+            [hashgraph.schemas :as hgs]
+            [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl] :as utils]
             [hashgraph.utils.core-test]
 
+            [app.material]
             [app.page :as page]
             [app.chat :as chat]
             [app.topic :as topic]
             [app.creds :as creds]
+            [app.contacts :as contacts]
             [app.topic-gossiper :as topic-gossiper]
+
 
             [rum.cursor]
             [rum.core :as rum]
@@ -36,6 +41,7 @@
 ;; I'd expect the second watch to override the first one
 
 ;; patching Cursor
+#_
 (extend-type rum.cursor/Cursor
   IWatchable
   (-add-watch [this key callback]
@@ -73,11 +79,13 @@
 
 ;; (m/validate :non-empty-string "malli")
 
+#_(js/console.log @hgs/*registry)
+
+(defonce *stop-timely-dissemination! (atom nil))
+
 (defn start []
   ;; start is called after code's been reloaded
   ;; this is configured in :after-load in the shadow-cljs.edn
-
-  #_
   (dev/start! {:report (pretty/reporter)})
   (run-tests (empty-env)
              ;; 'app.core
@@ -86,9 +94,11 @@
              'hashgraph.main
              'hashgraph.topic
              'app.topic
-             'app.chat
+             'app.creds
              'app.contacts
-             'app.creds)
+             'app.chat)
+
+  (reset! *stop-timely-dissemination! (topic-gossiper/start-timely-dissemination!->stop!))
 
   ;; (run-all-tests #"hashgraph.*")
   ;; (run-all-tests #"app.*")
@@ -104,7 +114,6 @@
   ;; (js/console.log chat)
   ;; (js/console.log (mc/collect chat))
   ;; (mc/linter-config)
-  (topic-gossiper/reg-topic-gossipers!)
   (when-let [node (.getElementById js/document "root")]
     (rum/mount (page/view) node))
   (js/console.log "started"))
@@ -112,8 +121,8 @@
 (defn stop []
   ;; stop is called before any code is reloaded
   ;; this is configured in :before load in the shadow-cljs.edn
-  (topic/unreg-topic-gossipers!)
-  #_
+  (when-let [stop-timely-dissemination! @*stop-timely-dissemination!]
+    (stop-timely-dissemination!))
   (dev/stop!)
   #_(mi/unstrument!)
   (js/console.log "stopped"))

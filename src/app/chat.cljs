@@ -1,7 +1,16 @@
 (ns app.chat
+  (:require-macros [app.material :refer [speed-dial speed-dial-icon speed-dial-action
+                                         icon icon-fingerprint icon-send
+                                         dialog dialog-title dialog-content dialog-content-text dialog-actions
+                                         text-field textarea-autosize
+
+                                         button fab
+                                         zoom fade
+                                         click-away-listener]]
+                   :reload-all)
   (:require [hashgraph.main :as hg]
             [hashgraph.topic :as hgt]
-            [hashgraph.utils.core :refer-macros [defn* l letl when-let*] :refer [conjv conjs] :as utils]
+            [hashgraph.utils.core :refer-macros [defn* l letl letl2 when-let*] :refer [conjv conjs] :as utils]
             [hashgraph.app.icons :as icons]
 
             [app.styles :refer [reg-styles! shadow0 shadow1 shadow2 shadow3] :as styles]
@@ -9,7 +18,10 @@
             [app.topic :as at]
             [app.topic-viz :as atv]
             [app.creds :as ac]
+            [app.creds-viz :as acv]
+            [app.utils :refer-macros [incm]]
 
+            [clojure.pprint]
             [rum.core :refer [defc defcs] :as rum]
             [garden.selectors :as gs]
             [garden.color :as gc]
@@ -24,12 +36,15 @@
 (def color-primary-lighter (gc/lighten color-primary 20))
 (def color-primary-lightest (gc/lighten color-primary 30))
 (def action-button-offset (px 10))
-(def action-button-size   (px 40))
+(def action-button-size   (px 56))
 (def messages-margin-x    (ga/+ action-button-size (ga/* 2 action-button-offset)))
 
 
 (def chat-styles
-  [[:.chat {:position  :relative
+  [[:.new-message-button
+    [:.MuiSpeedDialAction-staticTooltipLabel
+     {:width :max-content}]]
+   [:.chat {:position  :relative
             :height    :inherit
             :min-width (px 0)
             :width     :inherit}
@@ -50,7 +65,12 @@
                  :border-radius "12px 12px 12px 0px"
                  :margin-bottom "10px"
                  :margin-top    "10px"}
-      [:.message-content {:padding (px message-padding)}]
+      [:&.creator-info-bot {:align-self :center
+                            :border-radius "12px"}]
+      [:&.creator-aid-bot {:align-self :center
+                           :border-radius "12px"}]
+      [:.message-content {:padding     (px message-padding)
+                          :white-space :break-spaces}]
       [(gs/& (gs/nth-last-child "2")) {:margin-bottom "20px"}]
       [:&.from-me {:align-self    :flex-end
                    :border-radius "12px 12px 0px 12px"}]
@@ -80,62 +100,56 @@
                                    :font-weight :bold
                                    :font-size   "0.875rem"}]]]
 
-      [:&.new {:width "80%"
-               :display :flex
-               :align-items :center
-               :position :relative
-               :box-shadow shadow1}
-       [:.message-content {:flex-grow 1
-                           :min-width "100px"
-                           :outline :none
-                           :border :none
-                           :padding "12px"
-                           :background-color :transparent}]]
-      [:.new-message-button
-       {:position         :absolute
-        :bottom           (px 0)
-        :right            (-> action-button-offset
-                              (ga/-)
-                              (ga/- 1)) ;; 1 for border offset
-        :transform        "translate(100%, 0%)"
-        :width            (px 40)
-        :height           (px 40)
-        :display          :flex
-        :justify-content  :center
-        :align-items      :center
-        :background-color "#3390ec"
-        :border-radius    "50%"
-        :box-shadow       shadow1
-        :cursor           :pointer
-        :user-select      :none}]
-      [:.send-message
-       [:svg {}]]
-      [:.actions-shower
-       [:svg {:transition "transform 0.4s"}]
-       [:.actions-hide {:position :absolute
-                        :top      "0px" :right "0px" :bottom "0px" :left "0px"
-                        :display  :none}]
-       [:div.actions (merge (dissoc styles/card-style :padding)
-                            {:position       :absolute
-                             :top            "-10px"
-                             :right          "0px"
-                             :transform      "translate(0%, -100%)"
-                             :pointer-events :none
-                             :opacity        0
-                             :box-shadow     shadow1
-                             :transition     "opacity 0.4s"})
-        [:.action {:min-width  :max-content
-                   :width      "100%"
-                   :padding    "12px"
-                   :text-align :left
-                   :cursor     :default}
-         [:&:hover styles/accent-style]]]
-       [:&.shown
-        [:svg {:transform "rotate(45deg)"}]
-        [:.actions {:opacity        1
-                    :pointer-events :auto}
-         [:.action {:cursor :pointer}]]]
-       [:.send-message {}]]]]]])
+      ]]
+
+
+    [:.new-message-area {:width  "100%"
+                         :display :flex
+                         :justify-content :end
+                         :position    :relative}
+     [:.message [:&.new {:max-width "100%"
+                         :width "100%"
+                         :padding (ga/+ message-padding 6)
+                         :border "none !important"
+                         :outline "none !important"
+                         :box-shadow shadow1
+                         :resize :none}]]
+     [:.new-message-button
+      {:position         :absolute
+       :bottom           (px 10)
+       :right            (-> action-button-offset
+                             (ga/-)
+                             (ga/- 1) ;; 1 for border offset
+                             (ga/- 56)) ;; size of fab / speed-dial
+       :transform-origin "center calc(100% - 28px)"}]
+     [:.send-message
+      [:svg {}]]
+     #_[:.actions-shower
+      [:svg {:transition "transform 0.4s"}]
+      [:.actions-hide {:position :absolute
+                       :top      "0px" :right "0px" :bottom "0px" :left "0px"
+                       :display  :none}]
+      [:div.actions (merge (dissoc styles/card-style :padding)
+                           {:position       :absolute
+                            :top            "-10px"
+                            :right          "0px"
+                            :transform      "translate(0%, -100%)"
+                            :pointer-events :none
+                            :opacity        0
+                            :box-shadow     shadow1
+                            :transition     "opacity 0.4s"})
+       [:.action {:min-width  :max-content
+                  :width      "100%"
+                  :padding    "12px"
+                  :text-align :left
+                  :cursor     :default}
+        [:&:hover styles/accent-style]]]
+      [:&.shown
+       [:svg {:transform "rotate(45deg)"}]
+       [:.actions {:opacity        1
+                   :pointer-events :auto}
+        [:.action {:cursor :pointer}]]]
+      [:.send-message {}]]]]])
 (reg-styles! ::chat chat-styles)
 
 (defn my? [creator]
@@ -152,17 +166,18 @@
 (at/reg-subjective-tx-handler!
  :init-control
  (fn [{:keys [feed] :as db} {:event/keys [creator]} _]
-   (if (-> feed :feed/init-control-feed-item-idx nil?)
-     (-> db
-         (update-in [:feed :feed/items] conjv {:feed-item/kind      :promote-to-id
-                                               :feed-item/text      "Promote to ID"
-                                               :feed-item/creator   creator
-                                               :feed-item/my?       (my? creator)
-                                               :feed-item/reactions {:agree #{creator}}})
-         (assoc-in [:feed :feed/init-control-feed-item-idx] (count (:feed/items feed))))
-     (-> db
-         (update-in [:feed :feed/items (:feed/init-control-feed-item-idx feed) :feed-item/reactions :agree]
-                    conjs creator)))))
+   (-> (if (-> feed :feed/init-control-feed-item-idx nil?)
+         (-> db
+             (update-in [:feed :feed/items] conjv {:feed-item/kind      :promote-to-id
+                                                   :feed-item/text      "Promote to ID"
+                                                   :feed-item/creator   creator
+                                                   :feed-item/my?       (my? creator)
+                                                   :feed-item/reactions {:agree #{creator}}})
+             (assoc-in [:feed :feed/init-control-feed-item-idx] (count (:feed/items feed))))
+         (-> db
+             (update-in [:feed :feed/items (:feed/init-control-feed-item-idx feed) :feed-item/reactions :agree]
+                        conjs creator)))
+       (assoc :consensus-enabled? true))))
 
 (at/reg-subjective-tx-handler!
  :propose
@@ -188,35 +203,41 @@
  (fn [{:keys [feed] :as db} {:event/keys [creator]} _]
    (-> db
        (update-in [:feed :feed/items] conj {:feed-item/kind    :text-message
-                                            :feed-item/text    "Registered did:peer"
-                                            :feed-item/creator creator
-                                            :feed-item/my?     (my? creator)}))))
+                                            :feed-item/text    "Mailbox registered"
+                                            :feed-item/creator :info-bot}))))
 
 (at/reg-subjective-tx-handler!
  :connect-invite-accepted
  (fn [{:keys [feed] :as db} _ _]
    (-> db
        (update-in [:feed :feed/items] conjv {:feed-item/kind :text-message
-                                             :feed-item/text "Accepted connect invite"}))))
+                                             :feed-item/text "Accepted connect invite"
+                                             :feed-item/creator :info-bot}))))
 
 (at/reg-subjective-tx-handler!
  :disclose-acdc
- (fn [{:keys [feed] :as db} _ [_ acdc]]
+ (fn [{:keys [feed] :as db} {:event/keys [creator]} [_ acdc]]
    (cond-> db
      (not (contains? (:feed/disclosed-acdcs feed) acdc))
-     (-> (update-in [:feed :feed/items] conjv {:feed-item/kind :text-message
-                                               :feed-item/text "Credential presented"})
+     (-> (update-in [:feed :feed/items] conjv {:feed-item/kind    :text-message
+                                               :feed-item/text    "<credential>"
+                                               :feed-item/creator creator})
          (update-in [:feed :feed/disclosed-acdcs] conjs acdc)))))
 
 
-(defn inform-of-received-ke [{:keys [received-ke informed-ke] :as db} event]
-  (let [?latest-received-ke (ac/evt->?ke event)]
+(defn create-feed-item-of-received-ke [{:keys [received-ke informed-ke] :as db} novel-tip-taped]
+  ;; (js/console.warn (with-out-str (clojure.pprint/pprint db)))
+  ;; (js/console.warn (with-out-str (clojure.pprint/pprint (-> event hg/evt->db))))
+  (l db)
+  (l (-> novel-tip-taped hg/evt->db))
+  ;; (js* "debugger;")
+  (letl2 [?latest-received-ke (ac/evt->?ke novel-tip-taped)]
     (cond-> db
-      (not= received-ke ?latest-received-ke)
+      (not= (l received-ke) ?latest-received-ke) ;; latest is nil, received is some
       (-> (assoc :received-ke ?latest-received-ke)
           (update-in [:feed :feed/items]
                      (fn [feed-items]
-                       (let [novel-kes< (->> ?latest-received-ke
+                       (letl2 [novel-kes< (->> ?latest-received-ke
                                              (iterate :key-event/prior)
                                              (take-while #(not= % received-ke))
                                              reverse)]
@@ -224,44 +245,66 @@
                               (reduce (fn [feed-items-acc novel-ke]
                                         (conjv feed-items-acc
                                                (case (:key-event/type novel-ke)
-                                                 :inception   {:feed-item/kind :text-message
-                                                               :feed-item/text "ID has been incepted"}
-                                                 :interaction {:feed-item/kind :text-message
-                                                               :feed-item/text "Credential has been issued"}
-                                                 :rotation    {:feed-item/kind :text-message
-                                                               :feed-item/text "Keys been rotated"})))
+                                                 :inception   {:feed-item/kind    :ke/inception
+                                                               :feed-item/text    "ID has been incepted"
+                                                               :feed-item/creator :aid-bot
+                                                               :feed-item/concluded-by-event novel-tip-taped
+                                                               :feed-item/member-aid->signing-key+next-signing-key-hash+evt nil}
+                                                 :interaction {:feed-item/kind    :ke/interaction
+                                                               :feed-item/text    "Credential has been issued"
+                                                               :feed-item/creator :aid-bot}
+                                                 :rotation    {:feed-item/kind    :ke/rotation
+                                                               :feed-item/text    "Keys been rotated"
+                                                               :feed-item/creator :aid-bot})))
                                       feed-items)))))))))
 
-(reset! at/*subjective-smartcontracts [inform-of-received-ke])
+(reset! at/*post-subjective-db-handlers [create-feed-item-of-received-ke])
 
 
 ;; (-> @as/*selected-topic (@as/*topic->tip-taped) hg/->concluded-round js/console.log)
 
 (defc message-view < rum/reactive
   [topic {:feed-item/keys [kind proposal text creator my? idx reactions] :as feed-item}]
-  [:div.message {:key   idx
-                 :class (when my? "from-me")}
-   [:div.message-content
-    text]
-   (let [possible-reactions (case kind
-                              :promote-to-id [[:agree #(ac/add-init-control-event! topic)]]
-                              :proposal      [[:agree #(at/add-event! topic {:event/tx [:agree proposal]})]]
-                              [])]
-     (when (not-empty possible-reactions)
-       [:div.message-reactions
-        (for [[reaction-kind on-react] possible-reactions
-              :let                     [reactors   (get reactions reaction-kind)
-                                        i-reacted? (contains? reactors (rum/react as/*my-did-peer))]]
-          [:div.message-reaction {:class    (when i-reacted? "i-reacted")
-                                  :key      (str reaction-kind)
-                                  :on-click #(on-react)}
-           (icons/icon :regular :circle-check :color "white" :size "sm")
-           (when (>= (count reactors) 1)
-             [:span.message-reaction-count (count reactors)])])]))])
+  (case kind
+    :text-message
+    [:div.message {:key   idx
+                   :class [(when (keyword? creator)
+                             (str "creator-" (name creator)))
+                           (when my? "from-me")]}
+     [:div.message-content
+      text]
+     (let [possible-reactions (case kind
+                                :promote-to-id [[:agree #(ac/add-init-control-event! topic)]]
+                                :proposal      [[:agree #(at/add-event! topic {:event/tx [:agree proposal]})]]
+                                [])]
+       (when (not-empty possible-reactions)
+         [:div.message-reactions
+          (for [[reaction-kind on-react] possible-reactions
+                :let                     [reactors   (get reactions reaction-kind)
+                                          i-reacted? (contains? reactors (rum/react as/*my-did-peer))]]
+            [:div.message-reaction {:class    (when i-reacted? "i-reacted")
+                                    :key      (str reaction-kind)
+                                    :on-click #(on-react)}
+             (icons/icon :regular :circle-check :color "white" :size "sm")
+             (when (>= (count reactors) 1)
+               [:span.message-reaction-count (count reactors)])])]))]
+
+    :ke/inception
+    (let [{:feed-item/keys [member-aid->signing-key+next-signing-key-hash+evt
+                            concluded-by-event]} feed-item]
+      [:div.message.creator-aid-bot
+       [:div.message-content
+        "ID has been incepted"
+        "member | signing key | next signing key hash | set in event"
+        (for [[member-aid [signing-key next-signing-key-hash evt]] member-aid->signing-key+next-signing-key-hash+evt]
+          [:div member-aid signing-key next-signing-key-hash])]])
+    [:div.message {:style {:white-space :pre
+                           :font-family :monospace}}
+     (with-out-str (clojure.pprint/pprint feed-item))]))
 
 #_(l @at/*topic->subjective-db)
 (defc messages-view < rum/reactive
-  [topic my-creator]
+  [my-aid-topic my-aid my-creator topic]
   (let [feed (:feed (l (rum/react (rum/cursor atv/*topic->viz-subjective-db (l topic))
                                   #_(rum/cursor at/*topic->subjective-db topic)
                                   #_at/*viz-subjective-db)))]
@@ -284,9 +327,9 @@
 
 (defc issuee-actions < rum/reactive
   [topic]
-  (when-let* [issuer-aid-topic               (rum/react as/*selected-my-aid-topic)
-              issuer-aid-topic-tip-taped     ((rum/react as/*topic->tip-taped) issuer-aid-topic)
-              issuer-aid                     (-> issuer-aid-topic-tip-taped ac/evt->?ke-icp)
+  (when-let* [issuer-aid-topic               (l (rum/react as/*selected-my-aid-topic))
+              issuer-aid-topic-tip-taped     (l ((rum/react as/*topic->tip-taped) issuer-aid-topic))
+              issuer-aid                     (l (-> (l issuer-aid-topic-tip-taped) ac/evt->?ke-icp))
               issuee-aid                     (some-> topic
                                                      (get :member-aid->did-peers)
                                                      (->> (some (fn [[member-aid]] ;; works correctly only on 1 other-aid member
@@ -298,14 +341,40 @@
     [:<>
      [:button.action {:on-click #(ac/issue-acdc-qvi! issuer-aid-topic issuer-aid issuee-aid)}
       "Issue QVI"]
-     (when-let [issuer-aid-attributed-acdc-qvi (->> (rum/react (rum/cursor ac/*aid->attributed-acdcs issuer-aid))
-                                                    (some (fn [acdc] (when (= ::ac/acdc-qvi (:acdc/schema acdc))
-                                                                       acdc))))]
+     (when-let [issuer-aid-attributed-acdc-qvi (l (->> (rum/react (rum/cursor acv/*aid->attributed-acdcs issuer-aid))
+                                                       (some (fn [acdc] (when (= ::ac/acdc-qvi (:acdc/schema acdc))
+                                                                          acdc)))))]
        [:button.action {:on-click #(ac/issue-acdc-le! issuer-aid-topic issuer-aid issuee-aid issuer-aid-attributed-acdc-qvi)}
         "Issue LE"])]))
 
-(defcs new-text-message-button < rum/reactive (rum/local false ::*actions-shown?)
-  [{::keys [*actions-shown?]} topic add-text-message!]
+(defcs promote-to-id-form-dialog < (rum/local "" ::*id-name)
+  [{::keys [*opened? *id-name]} topic open? on-close]
+  (dialog {:open        open?
+           :on-close    on-close
+           "PaperProps" {"component" "form"
+                         "onSubmit"  (fn [e]
+                                       (.preventDefault e)
+                                       (on-close)
+                                       (at/set-topic-name-event! topic @*id-name)
+                                       (ac/add-init-control-event! topic))}}
+          (dialog-title "Promote to ID")
+          (dialog-content
+           (text-field {:auto-focus true
+                        :margin     "dense"
+                        :id         "id-name"
+                        :name       "Name"
+                        :label      "ID Name"
+                        :full-width true
+                        :variant    "standard"
+                        :on-change  #(reset! *id-name (-> % .-target .-value))})
+           (dialog-actions
+            (button {:on-click on-close} "Nevermind")
+            (button {:type     "submit"
+                     :disabled (empty? @*id-name)}
+                    "Promote")))))
+
+(defcs new-text-message-button < rum/reactive (rum/local false ::*actions-shown?) (rum/local false ::*promote-to-id-modal-open?)
+  [{::keys [*actions-shown? *promote-to-id-modal-open?]} my-aid-topic my-aid topic add-text-message!]
   (let [*new-message (rum/cursor as/*topic->new-message topic)
         new-message  (or (rum/react *new-message) "")
         can-send?    (not (empty? new-message))
@@ -314,42 +383,86 @@
 
         ;; mixing promote-to-id and issue contexts,
         ;; in promote, there's selected-my-aid-topic, but we want to create a new one - need to check if inception's been instantiated
+        init-control-initiated? (-> (rum/react (rum/cursor as/*topic->tip-taped topic)) ac/init-control-initiated?)
+        group-topic?            (-> (rum/react (rum/cursor ac/*my-aid->group-topics my-aid)) (contains? topic))
         ]
-    [:div.message.from-me.new {:key "new-message"}
-     [:input.message-content
-      (cond-> {:type        "text"
-               :placeholder "Message"
-               :value       (or (rum/react *new-message) "")
-               :on-change   #(reset! *new-message (-> % .-target .-value))}
-        can-send?
-        (assoc :on-key-press #(when (send-key-combo? %)
-                                (add-text-message! new-message)
-                                (reset! *new-message ""))))]
+    [:<>
+     #_(promote-to-id-form-dialog topic @*promote-to-id-modal-open? #(reset! *promote-to-id-modal-open? false))
+     [:div.new-message-area
+      (textarea-autosize {:class        ["message" "from-me" "new"]
+                          :key          "new-message"
+                          :placeholder  "Message"
+                          :value        new-message
+                          :on-change    #(reset! *new-message (-> % .-target .-value))
+                          :on-key-press #(when (and can-send? (send-key-combo? %))
+                                               (add-text-message! new-message)
+                                               (reset! *new-message ""))})
+      (let [ts-duration         400
+            transition-duration #js {"enter" ts-duration
+                                     "exit"  ts-duration}]
+        [(fade {:key     true
+                :in      can-send?
+                :timeout transition-duration
+                :style   {:transition-delay (if can-send? 0 0)}}
+               (fab {:class "new-message-button"
+                     :color "primary"
+                     :on-click #(when can-send?
+                                  (add-text-message! new-message)
+                                  (reset! *new-message ""))}
+                    (icon-send)))
+         (click-away-listener {:on-click-away #(reset! *actions-shown? false)}
+                              (fade {:key      false
+                                     :in       (not can-send?)
+                                     :timeout  transition-duration
+                                     :style    {:transition-delay (if-not can-send? 0 0)}
+                                     :on-click #(swap! *actions-shown? not)}
+                                    (speed-dial {:class      "new-message-button"
+                                                 "ariaLabel" "SpeedDial basic example"
+                                                 :icon       (speed-dial-icon)
+                                                 :open       @*actions-shown?}
+                                                (when init-control-initiated?
+                                                  (speed-dial-action {:key           :rotate
+                                                                      :icon          (icons/icon :solid :key)
+                                                                      :tooltip-title "Rotate key"
+                                                                      :tooltip-open  true
+                                                                      :on-click      #(ac/rotate-key! topic)}))
+                                                (when (and group-topic? (not init-control-initiated?))
+                                                  (speed-dial-action {:key           "1"
+                                                                      :icon          (icon-fingerprint)
+                                                                      :tooltip-title "Promote to ID"
+                                                                      :tooltip-open  true
+                                                                      :on-click      #(ac/add-init-control-event! topic)}))
+                                                #_
+                                                (speed-dial-action {:key           "1"
+                                                                    :icon          (icon-fingerprint)
+                                                                    :tooltip-title "Promote to ID"
+                                                                    :tooltip-open  true
+                                                                    :on-click      #(ac/add-init-control-event! topic)}))))])]]
 
-     (if can-send?
-       [:div.new-message-button.send-message
-        {:on-click #(do (add-text-message! new-message)
-                        (reset! *new-message ""))}
-        (icons/icon :regular :send :size :2xl)]
+    #_(if can-send?
+          [:div.new-message-button.send-message
+           {:on-click #(do (add-text-message! new-message)
+                           (reset! *new-message ""))}
+           (icons/icon :regular :send :size :2xl)]
 
-       [:div.new-message-button.actions-shower.clean {:class    (when (rum/react *actions-shown?) "shown")
-                                                      :on-click #(swap! *actions-shown? not)}
-        (icons/icon :solid :plus :color "white" :size :lg)
-        [:div.actions
-         (if (-> (rum/react (rum/cursor as/*topic->tip-taped topic))
-                 ac/init-control-initiated?)
-           (my-aid-actions topic)
-           [:<>
-            [:button.action {:on-click #(ac/add-init-control-event! topic)}
-             "Promote to ID"]
-            (issuee-actions topic)])]])]))
+          [:div.new-message-button.actions-shower.clean {:class    (when (rum/react *actions-shown?) "shown")
+                                                         :on-click #(swap! *actions-shown? not)}
+           (icons/icon :solid :plus :color "white" :size :lg)
+           [:div.actions
+            (if (-> (rum/react (rum/cursor as/*topic->tip-taped topic))
+                    ac/init-control-initiated?)
+              (my-aid-actions topic)
+              [:<>
+               [:button.action {:on-click #(ac/add-init-control-event! topic)}
+                "Promote to ID"]
+               (issuee-actions topic)])]])))
 
 (defc chat-view < rum/static rum/reactive
-  [topic my-creator add-text-message!]
+  [my-aid-topic my-aid my-creator topic add-text-message!]
   [:div.chat
    [:div.messages
-    (messages-view topic my-creator)
-    (new-text-message-button topic add-text-message!)]])
+    (messages-view my-aid-topic my-aid my-creator topic)
+    (new-text-message-button my-aid-topic my-aid topic add-text-message!)]])
 
 (defn add-text-message! [topic my-creator text-message]
   (swap! as/*topic->tip-taped update topic
@@ -364,8 +477,10 @@
 
 (defc topic-view < rum/reactive
   []
-  (when-let* [topic      (rum/react as/*selected-topic)
-              my-creator (rum/react as/*my-did-peer)]
+  (when-let* [my-aid-topic (rum/react as/*selected-my-aid-topic)
+              my-aid       (rum/react (rum/cursor ac/*my-aid-topic->my-aid my-aid-topic))
+              my-creator   (rum/react as/*my-did-peer)
+              topic        (rum/react as/*selected-topic)]
     [:div.topic
-     (chat-view topic my-creator (partial add-text-message! topic my-creator))
+     (chat-view my-aid-topic my-aid my-creator topic (partial add-text-message! topic my-creator))
      (atv/topic-viz topic)]))
