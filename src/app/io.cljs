@@ -37,7 +37,6 @@
 (defonce agent (createAgent
                 (clj->js
                  {:ondid          (fn [did]
-                                    (set! hg/main-creator did)
                                     (reset! as/*my-did-peer did)
                                     (.connect agent))
                   :onconnected    (fn [] (reset! as/*connected? true))

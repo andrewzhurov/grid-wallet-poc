@@ -10,7 +10,7 @@
                                          click-away-listener]]
                    :reload-all)
   (:require [hashgraph.main :as hg]
-            [hashgraph.utils.core :refer-macros [l letl2]]
+            [hashgraph.utils.core :refer [subvecs] :refer-macros [l letl2]]
 
             [app.styles :refer [reg-styles! kind->css shadow0 shadow1 shadow2 shadow3] :as styles]
             [app.state :as as]
@@ -19,14 +19,7 @@
             [app.creds :as ac]
 
             [rum.core :refer [defc defcs] :as rum]
-            [utils :refer-macros [l]]
             [garden.units :refer [px]]))
-
-(def styles-horizontal
-  [])
-
-(def styles-vertical
-  [])
 
 (def styles
   [[:#navbar {:max-width             "100%"
@@ -36,38 +29,41 @@
               :display               :grid
               :grid-template-columns "80px 80px"
               :grid-template-rows    "1fr"
-              :grid-template-areas   "\"my-aids my-aid-contacts\""}
-    [:.navbar__my-aids {:grid-area  "my-aids"
-                        :box-shadow shadow1}]
-    [:.navbar__my-aid-contacts {:grid-area      "my-aid-contacts"
-                                :max-height     "100%"
-                                :max-width      "100%"
-                                :border-right   "solid 1px lightgray"
-                                :position       :relative
-                                :height         "100%"
-                                :display        :flex
-                                :flex-direction :column}
+              :grid-template-areas   "\"my-aid-topic-paths interactable-topic-paths\""}
+    [:.navbar__my-aid-topic-paths {:grid-area  "my-aid-topic-paths"
+                                   :box-shadow shadow1}]
+    [:.navbar__interactable-topic-paths {:grid-area      "interactable-topic-paths"
+                                         :max-height     "100%"
+                                         :max-width      "100%"
+                                         :border-right   "solid 1px lightgray"
+                                         :position       :relative
+                                         :height         "100%"
+                                         :display        :flex
+                                         :flex-direction :column}
      [:.new-topic-controls {:position :absolute
                             :bottom   (px 0)
                             :left     (px 0)
                             :right    (px 0)}]]]])
 
-(reg-styles! ::navbar styles styles-horizontal styles-vertical)
+(reg-styles! ::navbar styles)
+
 
 (defc navbar-view < rum/reactive
-  []
-  (let [my-did-peer           (rum/react as/*my-did-peer)
-        selected-my-aid-topic (rum/react as/*selected-my-aid-topic)
-        selected-my-aid       (rum/react (rum/cursor ac/*my-aid-topic->my-aid selected-my-aid-topic))]
-    [:div#navbar
-     [:div.navbar__my-aids
-      (for [my-aid-topic (rum/react as/*my-aid-topics)]
-        (contacts/my-aid-topic-view my-aid-topic))]
-     [:div.navbar__my-aid-contacts
-      (contacts/contacts-view selected-my-aid-topic selected-my-aid)
-      (contacts/new-topic-controls-view selected-my-aid-topic selected-my-aid)]
-     #_(if selected-my-aid-topic
+  [selected-my-aid-topic-path selected-topic-path]
+  [:div#navbar
+   [:div.navbar__my-aid-topic-paths
+    [:div.navbar__my-aid-topic-paths__selected
+     (for [selected-my-aid-topic-path (l (subvecs (l selected-my-aid-topic-path)))]
+       (contacts/my-aid-topic-path-view selected-my-aid-topic-path true))]
+    [:div.navbar__my-aid-topic-paths__selectable
+     (for [selectable-my-aid-topic-path (rum/react (rum/cursor ac/*topic-path->my-aid-topic-paths selected-my-aid-topic-path))]
+       (contacts/my-aid-topic-path-view selectable-my-aid-topic-path false))]]
 
-         (contacts/contact-view my-did-peer (rum/react as/*connected?)))
-     #_(contacts/contacts-view)
-     ]))
+   [:div.navbar__interactable-topic-paths
+    (contacts/interactable-topic-paths-view selected-my-aid-topic-path)
+    (contacts/new-topic-controls-view selected-my-aid-topic-path)]
+   #_(if selected-my-aid-topic
+
+       (contacts/contact-view my-did-peer (rum/react as/*connected?)))
+   #_(contacts/contacts-view)
+   ])

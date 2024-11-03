@@ -8,7 +8,8 @@
                                          zoom fade
                                          click-away-listener
                                          box container
-                                         tab-context tab-list tab tab-panel]]
+                                         tab-context tab-list tab tab-panel
+                                         typography]]
                    :reload-all)
   (:require [hashgraph.main :as hg]
             [hashgraph.topic :as hgt]
@@ -35,13 +36,15 @@
 
 (def new-aid-styles
   [[:.new-aid {:max-width (px 400)
+               :width :fit-content
                :height "100vh"
-               :margin-top "20%"
+               :margin-top "10vh"
                :margin-left :auto
                :margin-right :auto
                :display :flex
                :flex-direction :column
                :align-items :center}
+    [:.create]
     [:.new-aid__device-name-input {:width "100%"}]
     [:.new-aid__login {:width          "100%"
                        :display        :flex
@@ -53,70 +56,121 @@
 (defn accept-device-link! [device-link]
   (l device-link))
 
-(defcs new-aid-view < rum/reactive (rum/local "" ::*device-name) (rum/local "" ::*aid-name) (rum/local nil ::*tab)
+(defcs new-aid-view < rum/reactive (rum/local "" ::*device-name) (rum/local "" ::*aid-name) (rum/local false ::*tab)
   [{::keys [*device-name *aid-name *tab]}]
   [:div.new-aid
-   (text-field {:class      "new-aid__device-name-input"
+   (typography {:variant "h4"} "grID Wallet")
+   (typography {:variant "subtitle1"} "A safe place for Grassroots Identifiers")
+   (typography {:variant "subtitle2"} "ones that are truly yours")
+   #_[:h1 {:style {:margin-top "0px"}} "grID Wallet"]
+   #_[:h3 {:style {:margin-top "0px"}} "A safe place for Grassroots Identifiers"]
+   #_[:h4 {:style {:margin-top "0px"}} "ones that are truly yours"]
+   (text-field {:sx         {:margin-top "48px"}
+                :class      "new-aid__device-name-input"
                 :label      "Device Name"
                 :value      @*device-name
                 :auto-focus true
                 :on-change  #(reset! *device-name (-> % .-target .-value))})
    (let [my-did-peer (rum/react as/*my-did-peer)]
-     (fade {:key     1
-            :in      (and (some? my-did-peer)
-                          (not (empty? @*device-name)))
-            :timeout {"enter" 400
-                      "exit"  400}}
-           (button {:style    {:align-self :end
-                               :margin-top "10px"}
-                    ;; :disabled (empty? @*device-name)
-                    :on-click (fn []
-                                (let [topic (at/create-topic! my-did-peer #{my-did-peer} {:topic-name @*device-name})]
-                                  (ac/add-init-control-event! [] topic)
-                                  (ac/add-event! [] topic {:event/tx [:reg-did-peers ]})))}
-                   "Create Device AID")))
-   #_(fade {:key     :login
-          :in      (not (empty? @*device-name))
-          :timeout {"enter" 400
-                    "exit"  400}}
-         [:div.new-aid__login
-          (tab-context {:value @*tab}
-                       (box {:sx {:border-bottom 1
-                                  :border-color  "divider"}}
-                            (tab-list (tab {:value    "1"
-                                            :on-click #(reset! *tab "1")
-                                            :label    "Link"})
-                                      (tab {:value    "2"
-                                            :on-click #(reset! *tab "2")
-                                            :label    "Create"})))
-                       (tab-panel {:value "1"}
-                                  [:div {:style {:display        :flex
-                                                 :flex-direction :column}}
-                                   (text-field {:label       "Device Link"
-                                                :placeholder "Paste Device Link here"
-                                                :helper-text "You can create Device Link from one of your devices"
-                                                :auto-focus  true
-                                                :on-change   #(-> % .-target .-value (accept-device-link!))})
-                                   [:div "<QR CODE>"]])
-                       (tab-panel {:value "2"}
-                                  [:div {:style {:display        :flex
-                                                 :flex-direction :column}}
-                                   (text-field {:label     "AID Name"
-                                                :value     @*aid-name
-                                                :auto-focus  true
-                                                :on-change #(reset! *aid-name (-> % .-target .-value))})
-                                   (let [my-did-peer (rum/react as/*my-did-peer)]
-                                     (fade {:key     1
-                                            :in      (and (some? my-did-peer)
-                                                          (not (empty? @*aid-name)))
-                                            :timeout {"enter" 400
-                                                      "exit"  400}}
-                                           (button {:style    {:align-self :end
-                                                               :margin-top "10px"}
-                                                    ;; :disabled (empty? @*device-name)
-                                                    :on-click (fn [] (let [topic (at/create-topic! my-did-peer #{my-did-peer} {:topic-name @*device-name})]
+     [:<>
+      (fade {:key     1
+             :in      (and (some? my-did-peer)
+                           (not (empty? @*device-name)))
+             :timeout {"enter" 400
+                       "exit"  400}}
+            (button {:style    {:margin-top    "24px"
+                                :margin-bottom "24px"}
+                     ;; :disabled (empty? @*device-name)
+                     :on-click (fn []
+                                 (let [init-key (actrl/topic-path->init-key [])
+                                       topic    {:topic-name           @*device-name
+                                                 :member-init-keys     [init-key]
+                                                 :member-init-keys-log [init-key]
+                                                 :active-creators      #{0}
+                                                 :threshold            [[1 1]]
+                                                 :total-stake          hg/total-stake ;; ideally this is not needed for one-member hg
+                                                 :stake-map            {init-key hg/total-stake}}]
+                                   (reset! as/*selected-topic-path [topic])
+                                   (reset! as/*browsing {:page :topic})
+                                   (at/add-event! [topic] {hg/topic topic})
+                                   (ac/add-init-control-event! [topic])
+                                   #_(ac/add-event! [topic] {:event/tx [:assoc-did-peer my-did-peer]})))}
+                    "Create Device grID"))
+      (fade {:key     :login
+             :in      (and (some? my-did-peer)
+                           (not (empty? @*device-name)))
+             :timeout {"enter" 400
+                       "exit"  400}}
+            [:div.new-aid__login
+             (typography {:variant "subtitle1"} "or")
+             (tab-context {:value @*tab}
+                          (box {:sx {:border-bottom 1
+                                     :padding-top   "24px"
+                                     :border-color  "divider"}}
+                               (tab-list (tab {:value    "1"
+                                               :on-click #(reset! *tab "1")
+                                               :label    "Join Personal grID"})
+                                         (tab {:value    "2"
+                                               :on-click #(reset! *tab "2")
+                                               :label    "Create Personal grID"})))
+                          (tab-panel {:value "1"}
+                                     [:div {:style {:display        :flex
+                                                    :flex-direction :column
+                                                    :align-items    :center}}
+                                      (text-field {:label       "Join Invite"
+                                                   :placeholder "Paste Join Invite here"
+                                                   :helper-text "You can create Join Invite from one of your devices"
+                                                   :auto-focus  true
+                                                   :on-change   #(-> % .-target .-value (accept-device-link!))})
+                                      [:div "<Scan Join Invite QR code>"]
+                                      [:div "<Show Join Request QR code>"]])
+                          (tab-panel {:sx    {:width                "100%"
+                                              :box-sizing           :border-box
+                                              #_#_#_#_:padding-left "0px"
+                                              :padding-right        "0px"}
+                                      :value "2"}
+                                     [:div {:style {:display        :flex
+                                                    :flex-direction :column
+                                                    :align-items    :center}}
+                                      (text-field {:sx         {:width "100%"}
+                                                   :label      "Person Name"
+                                                   :value      @*aid-name
+                                                   :auto-focus true
+                                                   :on-change  #(reset! *aid-name (-> % .-target .-value))})
+                                      (let [my-did-peer (rum/react as/*my-did-peer)]
+                                        (fade {:key     1
+                                               :in      (and (some? my-did-peer)
+                                                             (not (empty? @*aid-name)))
+                                               :timeout {"enter" 400
+                                                         "exit"  400}}
+                                              (button {:style    {:margin-top    "24px"
+                                                                  :margin-bottom "24px"}
+                                                       ;; :disabled (empty? @*device-name)
+                                                       :on-click (fn []
+                                                                   (let [device-init-key (actrl/topic-path->init-key [])
+                                                                         device-topic    {:topic-name           @*device-name
+                                                                                          :member-init-keys     [device-init-key]
+                                                                                          :member-init-keys-log [device-init-key]
+                                                                                          :threshold            [[1 1]]
+                                                                                          :total-stake          hg/total-stake ;; ideally this is not needed for one-member hg
+                                                                                          :stake-map            {device-init-key hg/total-stake}}]
+                                                                     #_(reset! as/*selected-topic-path [device-topic])
+                                                                     #_(reset! as/*browsing {:page :topic})
+                                                                     (at/add-event! [device-topic] {hg/topic device-topic})
+                                                                     (ac/add-init-control-event! [device-topic])
+                                                                     #_(ac/add-event! [device-topic] {:event/tx [:assoc-did-peer my-did-peer]})
+
+                                                                     (let [device-aid     (or (get @ac/*topic-path->my-aid [device-topic]) (throw (ex-info "device aid is not present" {:device-topic-cr (get @as/*topic-path->cr [device-topic])})))
+                                                                           personal-topic (ac/create-aided-topic! [device-topic] {:topic-name     @*aid-name
+                                                                                                                                  :member-aids    [device-aid]
+                                                                                                                                  :member-aid->ke (->> [device-aid]
+                                                                                                                                                       (into (hash-map) (map (fn [member-aid] [member-aid (-> member-aid (@ac/*aid->latest-known-ke))]))))})]
+                                                                       (ac/add-init-control-event! [device-topic personal-topic])
+                                                                       (reset! as/*selected-topic-path [device-topic personal-topic])
+                                                                       (reset! as/*browsing {:page :topic})))
+                                                                   #_(let [topic (at/create-topic! my-did-peer #{my-did-peer} {:topic-name @*device-name})]
                                                                        (ac/add-init-control-event! topic)))}
-                                                   "Create AID")))]))])]
+                                                      "Create Personal grID")))]))])])]
   #_[:div {:style {:height          "100vh"
                    :width           "100vw"
                    :display         :flex

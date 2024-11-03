@@ -10,7 +10,6 @@
    [app.topic :as topic]
    [app.chat :as chat]
    [app.new-aid :as new-aid]
-   [utils :refer-macros [l]]
 
    [rum.core :refer [defc defcs] :as rum]
    [garden.selectors :as gs]
@@ -54,15 +53,14 @@
    [:style (hga-styles/kind->css :bare)]
    [:style (hga-styles/kind->css :vertical)]
 
-   (if-not (rum/react as/*selected-my-aid-topic)
-     (new-aid/new-aid-view)
-     [:div#root-view
-      (navbar/navbar-view)
-      (let [selected-my-aid-topic (rum/react as/*selected-my-aid-topic)
-            selected-my-aid       (rum/react (rum/cursor ac/*my-aid-topic->my-aid selected-my-aid-topic))]
+   (if-let [selected-topic-path (not-empty (rum/react as/*selected-topic-path))]
+     (let [selected-my-aid-topic-path (rum/react ac/*selected-my-aid-topic-path)]
+       [:div#root-view
+        (navbar/navbar-view selected-my-aid-topic-path selected-topic-path)
         [:#page
          (case (rum/react as/*selected-page)
-           :topic     (chat/topic-view)
-           :new-topic (contacts/new-topic-page-view selected-my-aid-topic selected-my-aid)
-           :profile   (profile/profile-page-view)
-           [:div "Home page"])])])])
+           :topic     (chat/topic-path-view selected-my-aid-topic-path selected-topic-path)
+           :new-topic (contacts/new-topic-page-view selected-topic-path)
+           :profile   (profile/profile-page-view selected-topic-path)
+           [:div "Home page"])]])
+     (new-aid/new-aid-view))])

@@ -5,7 +5,6 @@
             [app.io :refer [reg< send-message]]
             [app.utils :refer [reg-on-clipboard-text!]]
             [hashgraph.main :as hg]
-            [utils :refer-macros [l]]
             [clojure.edn :as edn]
             [clojure.set :as set]
             [clojure.pprint :refer [pprint]]

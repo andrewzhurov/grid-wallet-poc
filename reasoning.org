@@ -1,3 +1,110 @@
+* gossip
+** Problem: spamming member with enormous grafts
+*** Solution: talk to him only when heard from him directly
+**** does not cater for initial sync, where all members will send enourmous db + graft
+***** Vote on who's gonna sync him, repeat on timeout, increasing timeout
+****** base initial timeout on amount to sync, giving syncer and syncee time to process
+***** torrent-like
+***** send only crucial info (members, mailboxes), hash the rest
+****** let him pull later
+******* torrent-like?
+**** won't work on loss of a message, p2p will be halted between the two
+***** Solution: talk when see that sent tip is an ancestor of his event
+
+* how to store forked events?
+** ref to events directly, event as Map
+** sp indexed linked list chain, forked chain shares the fork base list
+** sp indexed vec, forked events are in separate vec, link by idx
+*** as could be with Bevy
+*** were we able to create event tables per creator (incl. sybil creators)
+** hash->event map, events contain hashes
+*** costlier lookup than of vec O(1)
+*** can store events in rkyv's Archive'd form
+
+* how to gossip forked events?
+
+* IDEA topic's hashgraph event as anchor under member's KEL
+** PRO simple(?) state management - everything's under :ke
+** PRO enhanced security & authenticity?
+** PRO group chat topic has events from member AIDs
+*** reduced chatiness
+*** events can contain many refs, increased compaction
+*** propose intents do not leak to others prematurelly, folks of an AID consent - then
+*** PRO shared responsibility - outsiders don't know the one who proposed
+*** PRO meta-hashgraph gives total order of events across hashgraph topics
+*** PRO KERI's disclosure works on events
+*** majority of signing weight peers needs to confirm
+**** CON given it's low per member - they may be offline - longer wait
+*** CON more total chatter?
+** PRO neat for debugging - each device KEL will have links to other device's KELs - one giant meta-hashgraph (given KELs anchor public stuff)
+** CON device KEL as source of truth - bottleneck
+*** anchor in batch
+*** device KEL will grow like CRAZY
+**** hashgraph will contain a TON of junk/empty events
+***** it's not meant to be persisted
+** CON may be easier to correlate, observing activity in device KELs
+
+* what's valuable for ala Discord app?
+** it's about community management
+*** in form of a controlled playground
+**** do we even want that?
+***** a place where you can collab with others, if owners so wish
+
+* how do people use social apps?
+** blogs
+*** post long-form
+** twitter
+*** post short-form
+*** subscribe to another's posts
+*** DM
+** discord
+*** roles
+**** community admin: manages community topics, priveleges authZ of community managers
+***** perms: add topic, remove topic
+**** community manager: manages topics according to their authZ
+***** perms: remove member, remove message
+**** members: participate in topics they've been authZ to
+***** perms: read messages, write messages
+*** juxt
+**** messages comes associated with tags (#bevy #help) (#keri #acdc)
+***** topics aggregate messages / they are filters
+****** in #bevy aggregates everything (from (#bevy) (#bevy #help) (#bevy #avian))
+****** DM is yet another topic (#aid1 #aid2 #private)
+****** topic tags are in set, so (#bevy #help) = (#help #bevy)
+***** tags of a message inherit selected topic tags - context tags
+***** tags can be automatically derived out of content
+****** as addition to context tags
+***** "discord" community can have preset/default topic hierarchy
+****** yet it's end-user customizable to their liking
+****** OR to have default hierarchy automatically derived
+******* e.g., based on the amount of messages in a topic
+****** it's enough to have one root-level topic (#bevy), where all bevy-related events land
+***** ??? sers anchor posts under their KELs
+****** posts ref child-free tips known to user / or ref latest child-free tip
+****** friend cordially gossips to a friend what he needs
+******* posts in topic another follows (#bevy #help #render)
+******** ??? will post end up in every subset topic
+********* (#bevy #help #render) (#bevy #help) (#help #render) (#bevy #render) ...
+********* or are these hierarchical? [#bevy #render #help]
+********** ending up in [#bevy] [#bevy #render]
+***** ??? members may wish to have a private group topic (e.g., admins of Acme)
+****** group AID, with membership based on credential (automatic add/remove member)
+******* ehh, not uniform with tags
+****** <acme-admin-cred> as tag
+******* Problem: post with (#server #auth <acme-admin-cred>) would be added to (#server #auth)?
+******* begs for a separate :for-the-eyes-of / :disclosee-authorization field on event
+******** where one can specify rules on who's eligible to receive it (<acme-admin-cred>)
+**** tags are derived client-side
+***** how to
+****** https://github.com/guillaume-be/rust-bert
+****** https://github.com/e-tornike/best-of-ml-rust
+***** IDEA use IPVM to calculate tags
+****** will substantially spare the need of redundant compute
+******* e.g., group of 1k members, where >3 receipts are enough
+***** makes derivation of client-side tags end-user-customizable
+***** PROBLEM how to know that another may need a message you got?
+****** analyze messages another posts, likes, re-tweets
+******* deriving concepts another's interested in
 * hierarchical consensus weight
 ** PRO default as control weights
 *** PRO makes consensus weight config optional
@@ -10,6 +117,9 @@
 ** CON costlier to compute
 ** CON harder to viz
 ** Decision: NO, complicates, end-user benefit not found
+
+* annotations
+** https://github.com/annotation/stam-rust
 
 * names of control hierarchy?
 ** only of control hierarchy? what about stake (hierarchy?)
@@ -38,13 +148,21 @@ So only controlling aids are leaked out, consensus aids are kept private to topi
 ******** as long as you know at least 1 topic member -> you can ask to sync up
 ******** Y: as long as at least 1 topic member knows you -> you get synced up
 
+* disclosure
+** TODO disclose to child aids only necessary KEs
+** TODO disclose KEs with hashes as anchors
+** DONE disclose delta KEs, those that are on top of what's known
+*** this logic can be made generic, what we do is we replicate a DAG, same as with hg
+**** potential impl: id_f(node)
+***** Problem: hg-specific and aid->ke specific lookup of that id
+
 * TODO consensus stake and controlling stake
 ** TODO viz stake-type
 *** TODO controlling stake votes viz
 **** as filling vote circles on events
 ** TODO add stake-type-toggle
 
-* TODO viz information toggles
+* TODO viz information toggles (rounds, witnesses, votes)
 
 * how to color events given we color member aids?
 ** gotcha: creator = pub key
@@ -53,6 +171,8 @@ So only controlling aids are leaked out, consensus aids are kept private to topi
 ** gotcha: same aid can be a controller under different aids
 ** member-aids+event->controlling-path
 ** aid-to-color+member-aid->color
+** Option1: parent color as blend of children colors
+** Option2: children colors as parent's color
 
 * is there need for a Device AID?
 ** what do you do with these devices?

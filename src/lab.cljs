@@ -176,3 +176,56 @@
      (doseq [el els]
        (goog.object/get jo (hash el))))))
 ;; js map is generally faster
+
+
+;; pub-key (256 bit) as emoji, how much needed?
+;; https://openmoji.org/
+;; emojis count: 4177
+(count "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCE9Uli8bGnD4hOWdeo5KKQJ/P/vOazI4MgqJK54w37emP2JwOAOdMmXuwpxbKng3KZz27mz+nKWIlXJ3rzSGMo")
+(/ 4177 64)
+(require 'clojure.math)
+(> (clojure.math/pow 2 256)
+   (clojure.math/pow 4177 22))
+;; 22 emojies - that's a lot to show on screen
+
+
+(= (hash {1 {2 2}})
+   (hash {1 (hash {2 2})}))
+;; => true
+;; neat, can blind/forget data without loosing hash integrity
+
+(= (hash (:a {:a {1 1}})) (hash (:b {:b {1 1}})))
+;; => true
+
+(identical? (:a {:a {1 1}}) (:b {:b {1 1}}))
+;; => false
+
+(identical? (:a {:a :keyword}) (:b {:b :keyword}))
+;; => false
+
+(let [a :a]
+  (identical? a a))
+;; => true
+
+
+;; what's faster, (into #{} (map ...)) or (->> ... (map) (into #{}))
+(let [els (doall (shuffle (concat (range 10000) (range 10000) (range 10000))))]
+  (time (->> els
+             (map inc)
+             (into #{})
+             doall))
+  (time (->> els
+             (into #{} (map inc))
+             doall)))
+;; (into #{} (map)) generally up to 2x faster
+
+;; is it so for (into {}) ?
+(let [els (doall (shuffle (concat (range 10000) (range 10000) (range 10000))))]
+  (time (->> els
+             (map (fn [el] [el el]))
+             (into {})
+             doall))
+  (time (->> els
+             (into {} (map (fn [el] [el el])))
+             doall)))
+;; yes, (into {}) is generally faster, up to 2x

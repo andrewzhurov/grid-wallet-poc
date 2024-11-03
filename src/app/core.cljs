@@ -1,7 +1,9 @@
 (ns app.core
   "Entry ns for the browser app"
   {:dev/always true}
-  (:require [hashgraph.main :as hg]
+  (:require [app.patches]
+            [hashgraph.utils.js-map-test]
+            [hashgraph.main :as hg]
             [hashgraph.schemas :as hgs]
             [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl] :as utils]
             [hashgraph.utils.core-test]
@@ -23,6 +25,15 @@
             [malli.clj-kondo :as mc]
             [malli.dev.cljs :as dev]
             [malli.dev.pretty :as pretty]))
+
+;; testing patches
+;; (let [*a (atom {:a 0})]
+;;   (add-watch (rum/cursor *a :a) ::cursor-watch (fn [& all] (js/console.log "cursor watched:" all)))
+;;   (swap! *a update :a inc))
+;; (js/console.log "persistent set map type:" (type (.-hash-map #{})))
+;; (js/console.log "persistent set map type:" (type (.-hash-map ^PersistentHashSet (set [1 2 3]))))
+;; (js/console.log "persistent set map type:" (type (.-hash-map ^PersistentHashSet (set (list {1 1} {2 2} {1 1})))))
+;; (= #{1 2} #{2 1})
 
 (defn watches-behaviour []
   (let [*a   (atom {})
@@ -86,7 +97,8 @@
 (defn start []
   ;; start is called after code's been reloaded
   ;; this is configured in :after-load in the shadow-cljs.edn
-  (dev/start! {:report (pretty/reporter)})
+  #_(dev/start! {:report (pretty/reporter)})
+  #_
   (run-tests (empty-env)
              ;; 'app.core
              'hashgraph.utils.core
@@ -123,7 +135,7 @@
   ;; this is configured in :before load in the shadow-cljs.edn
   (when-let [stop-timely-dissemination! @*stop-timely-dissemination!]
     (stop-timely-dissemination!))
-  (dev/stop!)
+  #_(dev/stop!)
   #_(mi/unstrument!)
   (js/console.log "stopped"))
 

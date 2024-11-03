@@ -10,6 +10,7 @@
                    :reload-all)
   (:require [hashgraph.main :as hg]
             [hashgraph.topic :as hgt]
+            [hashgraph.schemas :as hgs]
             [hashgraph.utils.core :refer [hash= flatten-all] :refer-macros [defn* l letl letl2 when-let*] :as utils]
             [hashgraph.app.icons :as icons]
 
@@ -21,11 +22,13 @@
             [app.creds :as ac]
             [app.creds-viz :as acv]
             [app.topic-feed-unread :as atfu]
+            [app.aid :as aa]
 
             [garden.units :refer [px px- px+ px-div] :as gun]
             [rum.core :refer [defc defcs] :as rum]
             [clojure.edn :as edn]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [app.control :as actrl]))
 
 (def contacts-styles
   [[:.contact {:width           "80px"
@@ -140,6 +143,22 @@
       (.-clipboard)
       (.writeText (l text))))
 
+(hgs/register!
+ :connect-invite
+ [:map
+  [:connect-invite/at int?]
+  [:connect-invite/nonce uuid?]
+  [:connect-invite/sig string?]
+  [:connect-invite/target-aid :aid]
+  [:connect-invite/target-init-key->did-peer [:map-of string? string?]]
+  [:connect-invite/target-init-key->signing-key [:map-of string? string?]]
+  [:connect-invite/target-threshold :threshold]]
+
+ :connect-invite-accepted
+ [:map {:closed true}
+  [:connect-invite-accepted/connect-invite :connect-invite]
+  [:connect-invite-accepted/connectee-aid :aid]])
+
 (defn create-connect-invite [connect-invite*]
   ;; could be packed as DIDComm message for consistent io, this is a message that is transported via a kind of sneakernet / OOB
   (let [connect-invite (merge {:connect-invite/at    (.now js/Date)
@@ -147,31 +166,54 @@
                                :connect-invite/sig   ""}
                               connect-invite*)]
     ;; mayb also store sent invites locally, so you can revoke it
-    connect-invite))
-(reduce into [] '([1 2] [3 4]))
+    (when (hgs/check :connect-invite connect-invite)
+      connect-invite)))
+
 (defcs connect-invite-view < rum/reactive (rum/local false :*input-opened?)
   [{:keys [input-opened?]} target-aid]
   ;; TODO input for copying connect-invite if clipboard is not supported
-  ;; (js* "debugger;")
-  (l :connect-invite)
-  (when-let* [invitor-aid          (l (rum/react ac/*selected-my-aid))
-              target-aid-did-peers (l (rum/react (rum/cursor ac/*aid->did-peers target-aid)))]
-    (let [connect-invite* {:connect-invite/invitor-aid      invitor-aid
-                           :connect-invite/target-aid       target-aid
-                           :connect-invite/target-did-peers target-aid-did-peers}]
-      [:button.connect-invite {:on-click #(do (.stopPropagation %) (copy-to-clipboard! (pr-str (create-connect-invite connect-invite*))))
-                               :title    "Connect invite"}
-       (icons/icon :solid :link)])))
+  (when-let* [target-init-key->did-peer    (rum/react (rum/cursor ac/*aid->latest-known-init-key->did-peer target-aid))
+              target-init-key->signing-key (rum/react (rum/cursor ac/*aid->latest-known-init-key->signing-key target-aid))
+              target-ke                    (rum/react (rum/cursor ac/*aid->latest-known-ke target-aid))
+              target-ke-est                (-> target-ke ac/->latest-establishment-key-event)
+              target-threshold             (-> target-ke-est :key-event/threshold)]
+    (let [connect-invite* (cond-> {:connect-invite/target-aid                   target-aid
+                                   :connect-invite/target-init-key->did-peer    target-init-key->did-peer
+                                   :connect-invite/target-init-key->signing-key target-init-key->signing-key
+                                   :connect-invite/target-threshold             target-threshold} ;; could pass target-ke, but that would be a TON of info, not suitable for a link or QR code
+                            #_#_
+                            (not (contains? (rum/react ac/*my-aids) target-aid))
+                            (assoc :connect-invite/invitor-aid (rum/react ac/*selected-my-aid)
+                                   :connect-invite/invitor-ke  (rum/react ac/*selected-my-ke)))]
+      [:button.connect-invite {:on-click #(do (.stopPropagation %)
+                                              (when-let [connect-invite (l (create-connect-invite connect-invite*))]
+                                                (copy-to-clipboard! (pr-str connect-invite))))
+                                        :title    "Connect invite"}
+                (icons/icon :solid :link)])))
 
-(defn accept-connect-invite! [connectee-creator connectee-topic connectee-aid connectee-aid-did-peers {:connect-invite/keys [target-aid target-did-peers] :as connect-invite}]
-  (l [connectee-aid connectee-aid-did-peers connect-invite])
-  (let [topic-members (set/union (set connectee-aid-did-peers) (set target-did-peers))]
-    (at/create-topic! connectee-creator topic-members
-                      {:member-aid->did-peers {target-aid    target-did-peers
-                                               connectee-aid connectee-aid-did-peers}}
-                      {:event/tx [:connect-invite-accepted {:connect-invite-accepted/connect-invite connect-invite
-                                                            :connect-invite-accepted/connectee-aid  connectee-aid}]})))
+;; we could contact target-aid and get the latest target-ke, and create-aided-topic! afterwards,
+;; but that would require non-hashgraph communication (less robust) and whom of keys to contact?
+;; doing it via hashgraph we have uniform communication & all folks gossip to each other
+(defn accept-connect-invite! [my-aid-topic-path connectee-aid connectee-ke {:connect-invite/keys [target-aid target-threshold target-init-key->did-peer target-init-key->signing-key] :as connect-invite}]
+  (l [:accept-connect-invite! connectee-aid connectee-ke connect-invite])
 
+  (letl2 [connect-invite-accepted (hgs/checks :connect-invite-accepted {:connect-invite-accepted/connect-invite connect-invite
+                                                                        :connect-invite-accepted/connectee-aid  connectee-aid})
+          ;; only info necessary to derive the rest
+          topic*                                 {:connect-invite-accepted      connect-invite-accepted
+                                                  :member-aids                  [connectee-aid target-aid]
+                                                  :member-aid->ke               {connectee-aid connectee-ke} ;; makes topic bloated
+                                                  :member-aid->threshold        {target-aid target-threshold}
+                                                  :member-aid->member-init-keys {target-aid (vec (keys target-init-key->signing-key))}
+                                                  :member-init-key->did-peer    target-init-key->did-peer}
+          topic                   (ac/db-with-aid-control-propagated topic*)
+          contact-topic-path  (conj my-aid-topic-path topic)]
+    (reset! as/*selected-topic-path contact-topic-path)
+    (reset! as/*browsing {:page :topic})
+    (at/add-event! contact-topic-path {hg/topic topic}))
+  #_(ac/create-aided-topic! my-aid-topic-path {connectee-aid connectee-ke}
+                            {:connect-invite-accepted {:connect-invite-accepted/connect-invite connect-invite
+                                                       :connect-invite-accepted/connectee-aid  connectee-aid}}))
 
 
 #_
@@ -190,7 +232,7 @@
                  (at/create-topic! @as/*my-did-peer #{(l novel-outbound-contact) (l @as/*my-did-peer)})
                  #_(profile> (l novel-outbound-contact))))))
 
-(defcs accept-connect-invite-view < rum/reactive (rum/local false ::*input-open?)
+(defcs accept-connect-invite-button-view < rum/reactive (rum/local false ::*input-open?)
   {:will-mount (fn [state]
                  (let [*connect-invite   (atom nil)
                        on-clipboard-text (fn [clipboard-text]
@@ -200,34 +242,28 @@
                    (cond-> (assoc state
                                   ::*connect-invite          *connect-invite
                                   ::on-clipboard-text        on-clipboard-text)
-                     (l clipboard-watchable?)
+                     clipboard-watchable?
                      (assoc ::unreg-on-clipboard-text! (reg-on-clipboard-text! on-clipboard-text)))))
    :will-unmount (fn [{::keys [unreg-on-clipboard-text!] :as state}]
                    (when unreg-on-clipboard-text!
                      (unreg-on-clipboard-text!))
                    state)}
-  [{::keys [*connect-invite *input-open? on-clipboard-text]} selected-my-aid-topic selected-my-aid]
-  (let [?connect-invite          (rum/react *connect-invite)
-        ?connectee-creator       (rum/react as/*my-did-peer)
-        connectee-aid-topic      selected-my-aid-topic
-        ?connectee-aid           selected-my-aid
-        ?connectee-aid-did-peers (some-> connectee-aid-topic
-                                         (->> (rum/cursor as/*topic->tip-taped))
-                                         (rum/react)
-                                         at/->projected-db
-                                         :member-aid->did-peers vals
-                                         (->> (reduce into #{})))
-        shown?                   (when-let [{:connect-invite/keys [target-aid target-did-peers]} ?connect-invite]
-                                   (and target-aid target-did-peers
-                                        ?connectee-creator connectee-aid-topic ?connectee-aid ?connectee-aid-did-peers
-                                        (not= target-aid ?connectee-aid)
-                                        (not (contains? (rum/react (rum/cursor ac/*my-aid->contact-aids selected-my-aid))
-                                                        target-aid))))]
+  [{::keys [*connect-invite *input-open? on-clipboard-text]} selected-my-aid-topic-path]
+  (letl2 [?connect-invite          (rum/react *connect-invite)
+          connectee-aid-topic-path selected-my-aid-topic-path
+          ?connectee-aid           (rum/react (rum/cursor ac/*topic-path->my-aid connectee-aid-topic-path))
+          ?connectee-ke            (rum/react (rum/cursor ac/*topic-path->my-ke connectee-aid-topic-path))
+          shown?                   (when-let [{:connect-invite/keys [target-aid] :as connect-invite} (l ?connect-invite)]
+                                     (and (hgs/check :connect-invite connect-invite)
+                                          ?connectee-aid ?connectee-ke
+                                          (not (hash= target-aid ?connectee-aid))
+                                          (not (contains? (rum/react (rum/cursor ac/*topic-path->contact-aids selected-my-aid-topic-path))
+                                                          target-aid))))]
     (if clipboard-watchable?
       [:div.contact.accept-connect-invite
        (when shown?
          {:class    "shown"
-          :on-click #(accept-connect-invite! ?connectee-creator connectee-aid-topic ?connectee-aid ?connectee-aid-did-peers ?connect-invite)})
+          :on-click #(accept-connect-invite! selected-my-aid-topic-path ?connectee-aid ?connectee-ke ?connect-invite)})
        [:div.contact-name
         (icons/icon :solid :link)]]
 
@@ -235,7 +271,7 @@
        (when shown?
          (reset! *connect-invite nil)
          (reset! *input-open? false)
-         (accept-connect-invite! ?connectee-creator connectee-aid-topic ?connectee-aid ?connectee-aid-did-peers ?connect-invite)
+         (accept-connect-invite! selected-my-aid-topic-path ?connectee-aid ?connectee-ke ?connect-invite)
          nil)
        [:div.contact.accept-connect-invite
         {:class    "shown"
@@ -248,6 +284,7 @@
                        :label      "Connect Invite"
                        :on-change  #(->> % .-target .-value on-clipboard-text)}))]])))
 
+
 (defc aid-attributions-view < rum/reactive
   [aid]
   (let [aid-attributed-acdcs (rum/react (rum/cursor acv/*aid->attributed-acdcs aid))
@@ -258,81 +295,64 @@
       [:div.aid-certified
        (icons/icon :solid :verified2 :size :xl)])))
 
-(defc my-aid-topic-view < rum/reactive
+(defc my-aid-topic-path-view < rum/reactive
   {:key-fn hash}
-  [my-aid-topic]
-  (letl2 [connectivity? (rum/react as/*connected?)
-          my-aid        (rum/react (rum/cursor ac/*my-aid-topic->my-aid my-aid-topic))
-          my-aid-name   (rum/react (rum/cursor ac/*aid->aid-name my-aid))
-          group-aid?    (rum/react (rum/cursor ac/*aid->group-aid? my-aid))]
-    [:div.contact {:on-click #(do (reset! as/*selected-my-aid-topic my-aid-topic)
-                                  (reset! as/*browsing {:page :topic :topic my-aid-topic}))
+  [my-aid-topic-path selected?]
+  (let [connectivity? (rum/react as/*connected?)
+        my-aid        (rum/react (rum/cursor ac/*topic-path->my-aid my-aid-topic-path))
+        my-aid-name   (rum/react (rum/cursor ac/*aid->aid-name my-aid))
+        group-aid?    (rum/react (rum/cursor ac/*aid->group-aid? my-aid))]
+    [:div.contact {:on-click #(do (reset! as/*selected-topic-path my-aid-topic-path)
+                                  (reset! as/*browsing {:page :topic}))
                    :class    [(when group-aid? "group-aid")
-                              (when (hash= (rum/react as/*selected-my-aid-topic) my-aid-topic) "selected-my-aid")]}
+                              (when selected? #_(hash= (rum/react as/*selected-topic-path) my-aid-topic-path) "selected-my-aid")]}
      [:div.contact-name
       my-aid-name
-      (atfu/topic-feed-unread-count-bubble-view my-aid-topic)
+      (atfu/topic-feed-unread-count-bubble-view my-aid-topic-path)
       #_
       (when (not (nil? connectivity?))
         [:div.contact-connectivity {:class (if connectivity? "connected" "disconnected")}])
       (aid-attributions-view my-aid)
       (connect-invite-view my-aid)]]))
 
-(defc contact-topic-view < rum/reactive
+(defc contact-topic-path-view < rum/reactive
   {:key-fn hash}
-  [my-aid contact-aid]
-  (let [contact-aid-name (rum/react (rum/cursor ac/*aid->aid-name contact-aid))
-        group-aid?       (rum/react (rum/cursor ac/*aid->group-aid? contact-aid))
-        contact-topic    (rum/react (rum/cursor ac/*contact-aids->contact-topic #{my-aid contact-aid}))]
-    [:div.contact.contact-topic {:on-click #(reset! as/*browsing {:page :topic :topic contact-topic})
+  [my-aid-topic-path contact-topic-path]
+  (letl [my-aid           (rum/react (rum/cursor ac/*topic-path->my-aid my-aid-topic-path))
+         contact-aid      (first (disj (rum/react (rum/cursor ac/*contact-topic-path->connected-aids contact-topic-path)) my-aid))
+         contact-aid-name (rum/react (rum/cursor ac/*aid->aid-name contact-aid))
+         group-aid?       (rum/react (rum/cursor ac/*aid->group-aid? contact-aid))]
+    [:div.contact.contact-topic {:on-click #(do (reset! as/*selected-topic-path contact-topic-path)
+                                                (reset! as/*browsing {:page :topic}))
                                  :class    [(when group-aid? "group-aid")
-                                            (when (hash= (rum/react as/*selected-topic) contact-topic) "selected")]}
+                                            (when (hash= (rum/react as/*selected-topic-path) contact-topic-path) "selected")]}
      [:div.contact-name
       contact-aid-name
-      (atfu/topic-feed-unread-count-bubble-view contact-topic)
+      (atfu/topic-feed-unread-count-bubble-view contact-topic-path)
       (aid-attributions-view contact-aid)
       (connect-invite-view contact-aid)]]))
 
-(defc group-topic-view < rum/reactive
+(defc group-topic-path-view < rum/reactive
   {:key-fn hash}
-  [my-aid-topic group-topic]
-  (let [topic-name (rum/react (rum/cursor as/*topic->topic-name group-topic))]
-    [:div.contact.group {:on-click #(reset! as/*browsing {:page :topic :topic group-topic})
-                         :class    [(when (hash= (rum/react as/*selected-topic) group-topic) "selected")]}
+  [my-aid-topic-path group-topic-path]
+  (let [topic-name (rum/react (rum/cursor as/*topic-path->topic-name group-topic-path))]
+    [:div.contact.group {:on-click #(do (reset! as/*selected-topic-path group-topic-path)
+                                        (reset! as/*browsing {:page :topic}))
+                         :class    [(when (hash= (rum/react as/*selected-topic-path) group-topic-path) "selected")]}
      [:div.contact-name
       topic-name
-      (atfu/topic-feed-unread-count-bubble-view group-topic)]]))
+      (atfu/topic-feed-unread-count-bubble-view group-topic-path)]]))
 
-(defc contacts-view < rum/reactive
-  [my-aid-topic my-aid]
+(defc interactable-topic-paths-view < rum/reactive
+  [my-aid-topic-path]
   [:div.contacts
-   #_(let [{:keys [mutual-contacts pending-inbound pending-outbound]} (rum/react as/*contacts)]
-       [:<>
-        [:div.contact-group.mutual
-         (for [mutual-did mutual-contacts]
-           ^{:key did}
-           (contact-view mutual-did))]
-
-        [:div.contact-group.inbound
-         (for [inbound-did pending-inbound]
-           ^{:key did}
-           (contact-view inbound-did))]
-
-        [:div.contact-group.outbound
-         (for [outbound-did pending-outbound]
-           ^{:key did}
-           (contact-view outbound-did))]
-        ])
+   [:div.topics
+    (for [contact-topic-path (rum/react (rum/cursor ac/*topic-path->contact-topic-paths my-aid-topic-path))]
+      (contact-topic-path-view my-aid-topic-path contact-topic-path))]
 
    [:div.topics
-    (for [contact-aid (rum/react (l (rum/cursor ac/*my-aid->contact-aids (l my-aid))))]
-      (contact-topic-view my-aid contact-aid))]
-
-   [:div.topics
-    (do (l :groups) nil)
-    (for [group-topic (l (rum/react (rum/cursor ac/*my-aid->group-topics my-aid)))]
-      (group-topic-view my-aid-topic group-topic))]])
-
+    (for [group-topic-path (rum/react (rum/cursor ac/*topic-path->group-topic-paths my-aid-topic-path))]
+      (group-topic-path-view my-aid-topic-path group-topic-path))]])
 
 (def new-topic-spacing-y (px 20))
 (def new-topic-styles
@@ -347,8 +367,8 @@
                  :align-items     :center
                  :margin          :auto}
     [:.new-topic__topic-name {:width "100%"}]
-    [:.new-topic__topic-members {:width "100%"
-                           :margin-top new-topic-spacing-y}
+    [:.new-topic__topic-members {:width      "100%"
+                                 :margin-top new-topic-spacing-y}
      [:.topic-members__label {:font-size "medium"}]
      [:.topic-members__label-sub {:font-size "small"}]
      [:.topic-members__members {:width          "100%"
@@ -356,47 +376,46 @@
                                 :flex-direction :row
                                 :margin-top     (px-div new-topic-spacing-y 2)
                                 :margin-bottom  (px-div new-topic-spacing-y 2)}
-      [:.topic-members__member (assoc styles/card-style
-                                      :box-shadow styles/shadow0
-                                      :cursor :pointer
-                                      :transition "0.4s")
-       [:&:hover styles/accent-style]
-       [:&.selected styles/accent2-style]]]]
-    [:.new-topic__create-button {:align-self :end}]]])
+      ]]
+    [:.new-topic__create-button {:align-self :end}]]
+
+   ])
 
 (reg-styles! ::new-topic new-topic-styles)
 
-(defc new-topic-view < rum/reactive
+(defc new-topic-button-view < rum/reactive
   []
   (let [selected? (= :new-topic (rum/react (rum/cursor as/*browsing :page)))]
     [:div.contact.new-topic-button {:class    (when selected? "selected")
-                                    :on-click #(reset! as/*browsing {:page :new-topic})}
+                                    :on-click #(do (reset! as/*browsing {:page :new-topic})
+                                                   (reset! as/*selected-topic-path @ac/*selected-my-aid-topic-path))}
      [:div.contact-name "+G"]]))
 
 (defc new-topic-controls-view < rum/reactive
-  [selected-my-aid-topic selected-my-aid]
+  [selected-my-aid-topic-path]
   [:div.new-topic-controls
-   (accept-connect-invite-view selected-my-aid-topic selected-my-aid)
-   (new-topic-view)])
+   (accept-connect-invite-button-view selected-my-aid-topic-path)
+   (new-topic-button-view)])
 
-
-(add-watch as/*topic->tip-taped ::navigate-to-the-newly-added-topic ;; sane only for demo purposes
-           (fn [_ _ old-topic->tip-taped new-topic->tip-taped]
-             (when-let [novel-topic (first (set/difference (set (keys new-topic->tip-taped))
-                                                           (set (keys old-topic->tip-taped))))]
-               (reset! as/*browsing {:page :topic :topic novel-topic}))))
+#_
+(add-watch as/*topic-paths ::navigate-to-the-newly-added-topic ;; sane only for demo purposes
+           (fn [_ _ old-topic-paths new-topic-paths]
+             (when-let [novel-topic-path (first (set/difference new-topic-paths
+                                                                old-topic-paths))]
+               (reset! as/*selected-topic-path novel-topic-path)
+               (reset! as/*browsing {:page :topic}))))
 ;; (l @as/*my-aid-topics)
 ;; (l @as/*browsing)
-(defcs new-topic-page-view < rum/reactive (rum/local "" :*topic-name)
-  {:will-mount (fn [{[_ selected-my-aid] :rum/args :as state}]
-                 (assoc state :*member-aids (atom #{selected-my-aid})))}
-  [{:keys [*topic-name *member-aids]} selected-my-aid-topic selected-my-aid]
-  (let [member-aids         (l (rum/react *member-aids))
+
+(defcs new-topic-page-view < rum/reactive (rum/local "" :*topic-name) (rum/local #{} :*member-aids)
+  [{:keys [*topic-name *member-aids]} selected-my-aid-topic-path]
+  (let [selected-my-aid     (rum/react (rum/cursor ac/*topic-path->my-aid selected-my-aid-topic-path))
+        topic-name          (rum/react *topic-name)
+        member-aids         (l (conj (rum/react *member-aids) selected-my-aid))
         aid->toggle-member! (fn [aid] #(swap! *member-aids (fn [member-aids]
                                                              (if (contains? member-aids aid)
                                                                (disj member-aids aid)
-                                                               (conj member-aids aid)))))
-        ready?              (not (empty? @*topic-name))]
+                                                               (conj member-aids aid)))))]
     [:div.new-topic
      (text-field {:class      "new-topic__topic-name"
                   :label      "Group name"
@@ -405,59 +424,41 @@
                   :on-change  #(reset! *topic-name (-> % .-target .-value))})
 
      (fade {:key 0
-            :in  ready?}
+            :in  (not (empty? topic-name))}
            (letl2 [my-aids                      (rum/react ac/*my-aids)
-                 selected-my-aid-name         (rum/react (rum/cursor ac/*aid->aid-name selected-my-aid))
-                 selected-my-aid-contact-aids (rum/react (rum/cursor ac/*my-aid->contact-aids selected-my-aid))
-                 other-contact-aids           (rum/react (rum/cursor ac/*my-aid->other-contact-aids selected-my-aid))]
+                   selected-my-aid-name         (rum/react (rum/cursor ac/*aid->aid-name selected-my-aid))
+                   selected-my-aid-contact-aids (rum/react (rum/cursor ac/*topic-path->contact-aids selected-my-aid-topic-path))
+                   other-contact-aids           (rum/react (rum/cursor ac/*topic-path->other-contact-aids selected-my-aid-topic-path))]
              [:div.new-topic__topic-members
               [:div.topic-members__label "Group members"]
-              [:div.topic-members__label-sub "My AIDs"]
+              [:div.topic-members__label-sub "My grIDs"]
               [:div.topic-members__members
                (for [my-aid my-aids]
-                 (let [my-aid-name (rum/react (rum/cursor ac/*aid->aid-name my-aid))
-                       selected?   (contains? member-aids my-aid)]
-                   [:div.topic-members__member {:key      (hash my-aid)
-                                                :class    (when selected? "selected")
-                                                :on-click (when (not= my-aid selected-my-aid)
-                                                            (aid->toggle-member! my-aid))}
-                    my-aid-name]))]
+                 (aa/aid-view my-aid {:class    [(when (contains? member-aids my-aid) "selected")]
+                                      :on-click (when (not (hash=  my-aid selected-my-aid))
+                                                  (aid->toggle-member! my-aid))}))]
 
               (when (not-empty selected-my-aid-contact-aids)
                 [:<>
                  [:div.topic-members__label-sub (str selected-my-aid-name "'s contacts")]
                  [:div.topic-members__members
                   (for [contact-aid selected-my-aid-contact-aids]
-                    (let [contact-aid-name (rum/react (rum/cursor ac/*aid->aid-name contact-aid))
-                          selected?        (contains? member-aids contact-aid)]
-                      [:div.topic-members__member {:key      (hash contact-aid)
-                                                   :class    (when selected? "selected")
-                                                   :on-click (aid->toggle-member! contact-aid)}
-                       contact-aid-name]))]])
+                    (aa/aid-view contact-aid {:class    [(when (contains? member-aids contact-aid) "selected")]
+                                              :on-click (aid->toggle-member! contact-aid)}))]])
 
               (when (not-empty other-contact-aids)
                 [:<>
                  [:div.topic-members__label-sub "Other contacts"]
                  [:div.topic-members__members
                   (for [other-contact-aid other-contact-aids]
-                    (let [other-contact-aid-name (rum/react (rum/cursor ac/*aid->aid-name other-contact-aid))
-                          selected?              (contains? member-aids other-contact-aid)]
-                      [:div.topic-members__member {:key      (hash other-contact-aid)
-                                                   :class    (when selected? "selected")
-                                                   :on-click (aid->toggle-member! other-contact-aid)}
-                       other-contact-aid-name]))]])]))
+                    (aa/aid-view other-contact-aid {:class    [(when (contains? member-aids other-contact-aid) "selected")]
+                                                    :on-click (aid->toggle-member! other-contact-aid)}))]])]))
 
      (fade {:key 1
-            :in  ready?}
+            :in  (not (empty? topic-name))}
            (button {:class    "new-topic__create-button"
-                    :on-click #(letl2 [aid->did-peers        @ac/*aid->did-peers
-                                       member-aid->did-peers (->> member-aids
-                                                                  (map (fn [member-aid]
-                                                                         [member-aid (aid->did-peers member-aid)]))
-                                                                  (into {}))
-                                       member-aid-did-peers  (apply set/union (vals member-aid->did-peers))]
-                                 (at/create-topic! (l @as/*my-did-peer)
-                                                   member-aid-did-peers
-                                                   (l {:topic-name            @*topic-name
-                                                       :member-aid->did-peers member-aid->did-peers})))}
+                    :on-click #(ac/create-aided-topic! selected-my-aid-topic-path {:topic-name     topic-name
+                                                                                   :member-aids    member-aids
+                                                                                   :member-aid->ke (->> member-aids
+                                                                                                        (into (hash-map) (map (fn [member-aid] [member-aid (-> member-aid (@ac/*aid->latest-known-ke))]))))})}
                    "Create Group"))]))

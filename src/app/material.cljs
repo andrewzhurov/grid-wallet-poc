@@ -39,4 +39,6 @@
             ["@mui/lab/TabList$default" :as tab-list]
             ["@mui/material/Tab$default" :as tab]
             ["@mui/lab/TabPanel$default" :as tab-panel]
+
+            ["@mui/material/Typography$default" :as typography]
             ))

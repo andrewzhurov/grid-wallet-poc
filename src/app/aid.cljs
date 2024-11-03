@@ -54,8 +54,7 @@
                :transition (t :opacity (/ tt 2)
                               :left tt
                               :top tt)
-               :opacity    0}
-     [:&.active {:opacity 1}]
+               }
      [:&.me
       [:.member-name {:font-weight :bold}]]
      [:.avatar {:position :relative
@@ -86,6 +85,7 @@
   )
 
 (defn bake-alpha [rgba]
+  (l rgba)
   (gc/rgba (-> (->> [(:red rgba) (:green rgba) (:blue rgba)]
                     (mapv (fn [c]
                             (let [rem-c   (- 255 c)
@@ -97,10 +97,10 @@
   (str "rgb(" r "," g "," b ")"))
 
 (defn aid-depth->y [aid-depth]
-  (-> hga-view/avatar-size
+  (-> (/ hga-view/avatar-size 2)
       (+ (* aid-depth (+ hga-view/avatar-size 20)))))
 
-
+#_
 (defc aid-view < rum/static rum/reactive
   {:key-fn (fn [member-aid] (hash member-aid))}
   [member-aid member-color member-stake-pos active? aid->x hierarchy-size hierarchy-path hierarchical-view?]
@@ -138,12 +138,61 @@
             (aid-view controlling-aid adjusted-member-color (/ 1 (count ?controlling-aids)) true aid->x hierarchy-size new-hierarchy-path hierarchical-view?))
           [:div.grouping-area]])])))
 
+(defc member-aid-info-view <
+  {:key-fn (fn [{:member-aid-info/keys [member-init-key aid]}] (or member-init-key (hash aid)))}
+  [{:member-aid-info/keys [aid alias creation-time status stake pos-x color child-depth parent-depth member-aid-infos]} hierarchical-view? total-depth head? headless?]
+  [:<>
+   [:div.member {:class [(str "status-" (name (l status)))
+                         (when (nil? member-aid-infos) "root-aid")]
+                 :style {:left (-> pos-x hga-view/idx->x (- (/ hga-view/avatar-size 2)))
+                         :top  (if-not hierarchical-view?
+                                 (-> parent-depth aid-depth->y)
+                                 (-> total-depth (- (cond-> child-depth headless? dec)) aid-depth->y))}}
+    (when-not (and head? headless?)
+      [:div.avatar
+       (let [seed          (ac/creation-time->seed creation-time)
+             member-avatar (cond (= alias "A") hga-avatars/female-avatar
+                                 (= alias "B") hga-avatars/male-avatar
+                                 :else         (ac/parent-depth+seed->avatar parent-depth seed))]
+         (member-avatar (rgb->css-str color)
+                        (rgb->css-str (bake-alpha (assoc color :alpha (/ stake hg/total-stake))))))
+       [:div.member-name
+        alias]])]
+   (when member-aid-infos
+     (for [member-aid-info member-aid-infos]
+       (member-aid-info-view member-aid-info hierarchical-view? total-depth false headless?)))])
 
-(defcs topic-aids-view < rum/static rum/reactive (rum/local false  ::*hierarchy-opened?)
-  [{::keys [*hierarchy-opened?]} viz-width]
-  (l :members-topic-view)
+(defcs topic-path-aids-view < rum/static rum/reactive (rum/local false  ::*hierarchy-opened?)
+  [{::keys [*hierarchy-opened?]} topic-path viz-width {:member-aid-info/keys [alias parent-depth] :as member-aid-info}]
+  (let [headless? (= alias "???")]
+    (when-let* [active-parent-depth (if headless?
+                                      (dec parent-depth)
+                                      parent-depth)
+                members-height      (->> (cond-> parent-depth
+                                           headless? dec)
+                                         aid-depth->y
+                                         (+ hga-view/avatar-size (/ hga-view/avatar-size 2)))
+
+                bottom (if @*hierarchy-opened?
+                         "0px"
+                         (-> (+ hga-view/avatar-size hga-view/avatar-size)
+                             (- members-height)
+                             (str "px")))]
+      [:div#members {:style {:width  (str viz-width "px")
+                             :height members-height
+                             :bottom bottom}
+                     :class [(when @*hierarchy-opened? "hierarchical")]}
+       (when (> active-parent-depth 0)
+         [:div.hierarchy-toggler {:style    {:right (+ viz-width
+                                                       (+ hga-view/scrollbar-height)
+                                                       (- (/ hierarchy-toggle-size 2)))}
+                                  :on-click #(swap! *hierarchy-opened? not)}
+          (hga-icons/icon :solid :angle-up :color :black)])
+       (member-aid-info-view (l member-aid-info) (rum/react *hierarchy-opened?) active-parent-depth true headless?)]))
+
+  #_
   (when-let* [#_#_root-aids-sorted (l (rum/react hga-playback/*root-aids-sorted))  ;; does not preserve removed member-aids
-              member-aids  (rum/react hga-playback/*member-aids)]
+              member-aids          (rum/react hga-playback/*member-aids)]
     (let [root-aids-sorted (ac/aids->root-aids-sorted member-aids)
           aid->x           (partial ac/root-aids-sorted+aid->x root-aids-sorted)
           members-height   (->> member-aids
@@ -194,3 +243,27 @@
              (let []))
 
        ])))
+
+
+(def aid-styles
+  [[:.aid (assoc styles/card-style
+                 :width  (px 20)
+                 :height (px 20)
+                 :display :flex
+                 :align-items :center
+                 :justify-content :center
+                 :box-shadow styles/shadow0
+                 :cursor :pointer
+                 :transition "0.4s")
+    [:&:hover styles/accent-style]
+    [:&.selected styles/accent2-style]]])
+
+(reg-styles! :aid-styles aid-styles)
+
+(defc aid-view < rum/reactive
+  {:key-fn (fn [aid] (hash aid))}
+  [aid props]
+  (let [aid-name (rum/react (rum/cursor ac/*aid->aid-name aid))]
+    [:div.aid props
+     [:div.aid-name
+      aid-name]]))

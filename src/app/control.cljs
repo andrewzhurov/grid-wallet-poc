@@ -1,70 +1,79 @@
 (ns app.control
   (:require
-   [hashgraph.utils.core :refer [hash= not-neg mean conjs conjv map-vals] :refer-macros [defn* l letl letl2 when-let*] :as utils]
-   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
-   [app.state :as as]))
+   [hashgraph.utils.core :refer [hash= not-neg mean conjs conjv map-vals reverse-map] :refer-macros [defn* l letl letl2 when-let*] :as utils]
+   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda]]
+   [app.state :as as]
+   [rum.core :as rum]))
+rum/react
+(defonce *topic-path->control (atom {[] {:control/keys [(str "root-" (hash (random-uuid)) "-k")]}}))
 
-(defonce *my-aid-path+topic->control (atom {}))
+(deflda *topic-path->init-key [*topic-path->control as/*my-did-peer]
+  (fn [topic-path->control my-did-peer]
+    (->> topic-path->control
+         (map-vals (fn [control] (-> control :control/keys first))))))
 
-(def *my-aid-path+topic->first-key
-  (lazy-derived-atom [*my-aid-path+topic->control]
-      (fn [my-aid-path+topic->control]
-        (->> my-aid-path+topic->control
-             (map-vals (fn [control] (-> control :control/keys first)))))))
+(deflda *init-key->topic-path [*topic-path->init-key] reverse-map)
 
-(defn my-aid-path+topic->first-key [my-aid-path topic]
-  (or (@*my-aid-path+topic->first-key [my-aid-path topic])
-      (throw (ex-info "can't find init-key for my-aid-path+topic" {:my-aid-path+topic [my-aid-path topic] :*my-aid-path+topic->first-key @*my-aid-path+topic->first-key}))))
+#_(deflda *topic-path->member-init-key [as/*topic-paths *topic-path->init-key]
+  (fn [topic-paths topic-path->init-key]
+    (->> topic-paths
+         (reduce (fn [acc topic-path]
+                   (let [member-topic-path (vec (butlast topic-path))
+                         member-init-key   (topic-path->init-key member-topic-path)]
+                     (assoc acc member-topic-path member-init-key)))
+                 (hash-map)))))
 
-(def *topic->my-aid-paths
-  (lazy-derived-atom [*my-aid-path+topic->control]
-      (fn [my-aid-path+topic->control]
-        (->> my-aid-path+topic->control
-             keys
-             (map (fn [[my-aid-path topic]]
-                    [topic my-aid-path]))
-             (into {})))))
+(defn topic-path->init-key [topic-path]
+  (or (((if (some? rum/*reactions*) rum/react deref) *topic-path->init-key) topic-path)
+      (throw (ex-info "can't find init-key for topic-path" {:topic-path topic-path :*topic-path->init-key @*topic-path->init-key}))))
 
+(defn init-key->topic-path [init-key]
+  (or (((if (some? rum/*reactions*) rum/react deref) *init-key->topic-path) init-key)
+      (throw (ex-info "can't find topic-path for init-key" {:init-key init-key :*init-key->topic-path @*init-key->topic-path}))))
 
-(defn gen-key [my-aid-path topic idx] ;; passing in all kinds of stuff as `topic`
-  (cond (keyword? topic)
-        (str (name topic) idx)
-        (int? topic)
-        (str topic "-k" idx)
+(defn topic-path->member-init-key [topic-path]
+  (or (((if (some? rum/*reactions*) rum/react deref) *topic-path->init-key) (vec (butlast topic-path)))
+      (throw (ex-info "can't find member-init-key for topic-path" {:topic-path topic-path :*topic-path->member-init-key @*topic-path->init-key}))))
+
+(defn gen-key [topic-path idx] ;; passing in all kinds of stuff as `topic-path`
+  (cond (keyword? topic-path)
+        (str (name topic-path) idx)
+        (int? topic-path)
+        (str topic-path "-k" idx)
         :else
-        (str (hash [my-aid-path topic]) "-k" idx)))
+        (str (hash topic-path) "-k" idx)))
 
-(defn init-control! [my-aid-path topic]
+(defn init-control! [topic-path]
   (let [control {:control/idx  0
-                 :control/keys [(gen-key my-aid-path topic 0)
-                                (gen-key my-aid-path topic 1)
-                                (gen-key my-aid-path topic 2)]}]
-    (swap! *my-aid-path+topic->control assoc [my-aid-path topic] control)
-    control))
+                 :control/keys [(gen-key topic-path 0)
+                                (gen-key topic-path 1)
+                                (gen-key topic-path 2)]}]
+    (-> (swap! *topic-path->control update topic-path  (fn [?current-control] (or ?current-control control)))
+        (get topic-path))))
 
-(defn my-aid-path+topic->control [my-aid-path topic]
-  (or (@*my-aid-path+topic->control [my-aid-path topic])
-      (throw (ex-info "no control found for my-aid-path+topic" {:my-aid-path+topic [my-aid-path topic] :my-aid-path&topic->control @*my-aid-path+topic->control}))))
+(defn topic-path->control [topic-path]
+  (or (@*topic-path->control topic-path)
+      (throw (ex-info "no control found for topic-path" {:topic-path topic-path :*topic-path->control @*topic-path->control}))))
 
-(defn my-aid-path+topic->k [my-aid-path topic]
-  (let [control (my-aid-path+topic->control my-aid-path topic)]
+(defn topic-path->k [topic-path]
+  (let [control (topic-path->control topic-path)]
     (or (nth (:control/keys control) (:control/idx control) nil)
-        (throw (ex-info "no k is found for my-aid-path+topic" {:my-aid-path+topic [my-aid-path topic] :my-aid-path&topic->control @*my-aid-path+topic->control})))))
+        (throw (ex-info "no k is found for topic-path" {:topic-path topic-path :*topic-path->control @*topic-path->control})))))
 
-(defn my-aid-path+topic->nk [my-aid-path topic]
-  (let [control (my-aid-path+topic->control my-aid-path topic)]
+(defn topic-path->nk [topic-path]
+  (let [control (topic-path->control topic-path)]
     (or (nth (:control/keys control) (inc (:control/idx control)) nil)
-        (throw (ex-info "no nk is found for my-aid-path+topic" {:my-aid-path+topic [my-aid-path topic] :my-aid-path&topic->control @*my-aid-path+topic->control})))))
+        (throw (ex-info "no nk is found for topic-path" {:topic-path topic-path :*topic-path->control @*topic-path->control})))))
 
-(defn my-aid-path+topic->nnk [my-aid-path topic]
-  (let [control (my-aid-path+topic->control my-aid-path topic)]
+(defn topic-path->nnk [topic-path]
+  (let [control (topic-path->control topic-path)]
     (or (nth (:control/keys control) (inc (inc (:control/idx control))) nil)
-        (throw (ex-info "no nnk is found for my-aid-path+topic" {:my-aid-path+topic [my-aid-path topic] :my-aid-path&topic->control @*my-aid-path+topic->control})))))
+        (throw (ex-info "no nnk is found for topic-path" {:topic-path topic-path :*topic-path->control @*topic-path->control})))))
 
-(defn rotate-control! [my-aid-path topic]
-  (-> (swap! *my-aid-path+topic->control update [my-aid-path topic]
+(defn rotate-control! [topic-path]
+  (-> (swap! *topic-path->control update topic-path
              (fn [control]
                (-> control
                    (update :control/idx inc)
-                   (update :control/keys conj (gen-key my-aid-path topic (count (:control/keys control)))))))
-      (get [my-aid-path topic])))
+                   (update :control/keys conj (gen-key topic-path (count (:control/keys control)))))))
+      (get topic-path)))

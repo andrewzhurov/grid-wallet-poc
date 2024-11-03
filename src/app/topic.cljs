@@ -2,8 +2,8 @@
   (:require
    [hashgraph.main :as hg]
    [hashgraph.topic :as hgt]
-   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
-   [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl letl2] :as utils]
+   [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda]]
+   [hashgraph.utils.core :refer [hash= map-vals median not-neg] :refer-macros [defn* l letl letl2] :as utils]
 
    [app.state :as as]
    [app.control :as actrl]
@@ -20,29 +20,27 @@
 (defn tape->creators [tape] (-> tape tape->stake-map keys))
 
 
-(defn create-topic! [creator members & [init-db* partial-event]]
-  (l [creator members init-db* partial-event])
-  (let [topic-event       (merge (hg/create-topic-event creator members init-db*)
-                                 partial-event)
-        topic             (-> topic-event hg/topic)
-        novel-events      [topic-event]
-        topic-event-taped (hgt/tip+novel-events->tip-taped topic-event novel-events)]
-    (swap! (rum/cursor as/*topic->tip-taped topic) (fn [?tip-taped] (or ?tip-taped topic-event-taped))) ;; mayb add it via watch
-    topic))
-
 (defn add-event!
-  ([partial-evt] (add-event! @as/*selected-my-aid-path @as/*selected-topic partial-evt))
-  ([topic partial-evt] (add-event! @as/*selected-my-aid-path topic partial-evt))
-  ([my-aid-path topic partial-evt]
-   (swap! as/*topic->tip-taped update topic
-          (fn [tip-taped]
-            (let [new-tip       (cond-> (merge partial-evt
-                                               {hg/creator       (@actrl/*my-aid-path+topic->init-key [my-aid-path topic])
-                                                hg/creation-time (.now js/Date)})
-                                  tip-taped (assoc hg/self-parent tip-taped))
-                  novel-events  [new-tip]
-                  new-tip-taped (hgt/tip+novel-events->tip-taped new-tip novel-events)]
-              new-tip-taped)))))
+  ([partial-evt] (add-event! @as/*selected-topic-path partial-evt))
+  ([topic-path partial-evt]
+   (-> (swap! as/*topic-path->tip-taped update topic-path
+              (fn [?tip-taped]
+                (let [member-init-keys-log (or (-> ?tip-taped hg/evt->db :member-init-keys-log)
+                                               (-> partial-evt hg/topic :member-init-keys-log)
+                                               (throw (ex-info "no member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt})))
+                      my-member-init-key   (or (actrl/topic-path->member-init-key topic-path)
+                                               (throw (ex-info "no member-init-key for topic-path" {:topic-path topic-path :partial-evt partial-evt :?tip-taped ?tip-taped})))
+                      my-creator           (or (not-neg (-indexOf member-init-keys-log my-member-init-key))
+                                               (throw (ex-info "my-member-init-key is not in member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt :member-init-keys-log member-init-keys-log :my-member-init-key my-member-init-key})))
+                      new-tip              (cond-> (merge partial-evt
+                                                          {hg/creator       my-creator
+                                                           hg/creation-time (.now js/Date)})
+                                             ?tip-taped (assoc hg/self-parent ?tip-taped))
+                      _                    (hash new-tip)
+                      novel-events         [new-tip]
+                      new-tip-taped        (hgt/tip+novel-events->tip-taped new-tip novel-events)]
+                  new-tip-taped)))
+       (get topic-path))))
 
 (hg/reg-tx-handler! :set-topic-name
     (fn [db _ [_ topic-name]]
@@ -79,22 +77,22 @@
 
 (defn apply-subjective-tx-handler [db {:event/keys [tx] :as event}]
   (l [:apply-subjective-tx-handler db event])
-  (let [txes (hg/?tx-or-txes->?txes tx)]
-    (->> txes
-         (reduce (fn [db-acc [tx-handler-id :as tx]]
-                   (l tx)
-                   (let [?subjective-tx-handler (get (l @*subjective-tx-handlers) tx-handler-id)]
-                     (cond-> db-acc
-                       ?subjective-tx-handler (?subjective-tx-handler event tx))))
-                 db))))
+  (l (let [txes (hg/?tx-or-txes->?txes tx)]
+       (->> txes
+            (reduce (fn [db-acc [tx-handler-id :as tx]]
+                      (l tx)
+                      (let [?subjective-tx-handler (get (l @*subjective-tx-handlers) tx-handler-id)]
+                        (cond-> db-acc
+                          ?subjective-tx-handler (?subjective-tx-handler event tx))))
+                    db)))))
 
 (defonce *post-subjective-db-handlers (atom []))
 (defn apply-post-subjective-db-handlers [subjective-db novel-tip-taped]
   (l [:apply-post-subjective-db-handlers subjective-db novel-tip-taped])
-  (reduce (fn [subjective-db-acc post-subjective-db-handler]
-            (post-subjective-db-handler subjective-db-acc novel-tip-taped))
-          subjective-db
-          @*post-subjective-db-handlers))
+  (l (reduce (fn [subjective-db-acc post-subjective-db-handler]
+               (post-subjective-db-handler subjective-db-acc novel-tip-taped))
+             subjective-db
+             @*post-subjective-db-handlers)))
 
 (defn prev-subjective-db+novel-event->subjective-db
   [prev-subjective-db novel-event]
@@ -102,22 +100,17 @@
     (:event/tx novel-event) (apply-subjective-tx-handler novel-event)))
 
 (defn* ^:memoizing tip-taped->subjective-db [tip-taped]
-  (letl2 [prev-subjective-db (or (some-> (hg/self-parent tip-taped) tip-taped->subjective-db)
-                                 (hg/event->topic tip-taped))
-          novel-events       (-> tip-taped meta :tip/novel-events)]
-    (-> (reduce prev-subjective-db+novel-event->subjective-db
-                prev-subjective-db
-                novel-events)
-        (apply-post-subjective-db-handlers tip-taped))))
+  (l [:tip-taped->subjective-db tip-taped])
+  (l (let [prev-subjective-db (or (some-> (hg/self-parent tip-taped) tip-taped->subjective-db)
+                                  (hg/event->topic tip-taped))
+           novel-events       (-> tip-taped meta :tip/novel-events)]
+       (-> (reduce prev-subjective-db+novel-event->subjective-db
+                   prev-subjective-db
+                   novel-events)
+           (apply-post-subjective-db-handlers tip-taped)))))
 
-(def *topic->subjective-db
-  (lazy-derived-atom [as/*topic->tip-taped]
-    (fn [topic->tip-taped]
-      (l [::derive-topic->subjective-db topic->tip-taped])
-      (l (->> topic->tip-taped
-              (map (fn [[topic tip-taped]]
-                     [topic (tip-taped->subjective-db tip-taped)]))
-              (into {}))))))
+(deflda *topic-path->subjective-db [as/*topic-path->tip-taped]
+  (map-vals tip-taped->subjective-db))
 
 (defn tip-taped->consensus-enabled? [tip-taped]
   (-> tip-taped
@@ -127,42 +120,66 @@
 
 ;; ---- projected ----
 ;; would be better to project cr after cr, not one big mock one
-(defn* ^:memoizing ->projected-cr
+
+;; sorting by lamport in hg cr and here would mean same caches used => no pollution
+;; or, to have it fast, can do cr+subjective atop, then atop is incremental
+(defn* ^:memoizing event->projected-cr
   [event]
+  (l [::event->projected-cr event])
   (letl2 [cr (hg/->concluded-round event)]
-    (if (-> cr :concluded-round/es-r set (contains? event))
+    (if (-> cr :concluded-round/es-r (contains? event))
       cr
-      (letl2 [projected-cr*       {:concluded-round/r                    (max (inc (hg/->round-number event cr))
-                                                                              (inc (:concluded-round/r cr))) ;; will allow to pull events not known to cr
-                                   :concluded-round/ws                   #{event}
-                                   :concluded-round/prev-concluded-round cr}
-              projected-etr->les  (hg/concluded-round->event-to-receive->learned-events projected-cr*)
-              projected-es-r      (keys projected-etr->les) ;; will not take into an account weight of learned events, is not a sophisticated projection
-              projected-cr*       (-> projected-cr*
-                                      (assoc :concluded-round/etr->les projected-etr->les)
-                                      (assoc :concluded-round/es-r     projected-es-r))
-              ?projected-last-re  (hg/concluded-round->?received-event projected-cr*)
-              db                  (hg/cr-db cr)
-              projected-db        (if (nil? ?projected-last-re)
-                                    db
-                                    (hg/prev-db+received-event->db db ?projected-last-re))
-              projected-stake-map (-> projected-db :stake-map)
-              projected-cr        (-> projected-cr*
-                                      (assoc :concluded-round/db projected-db)
-                                      (assoc :concluded-round/stake-map projected-stake-map)
-                                      (cond->
-                                          ?projected-last-re (assoc :concluded-round/last-received-event ?projected-last-re)))]
+      (letl2 [projected-cr-r (max (inc (hg/->round-number event cr))
+                                  (inc (:concluded-round/r cr))) ;; will allow to pull events not known to cr
+              projected-ws   #{event}
+              projected-ufws projected-ws
+
+              ;; projected-etr->ufw-les  (hg/concluded-round->event-to-receive->learned-events projected-cr*)
+              ;; projected-es-r      (->> projected-etr->ufw-les keys set)
+
+              ;; does not order sp events properly
+              ;; projected-etr->projected-received-time (->> projected-etr->les (map-vals (fn [les] (->> les (map hg/creation-time) median))))
+              ;; projected-es-r      (->> projected-etr->les (keys) (sort-by projected-etr->projected-received-time)) ;; will not take into an account weight of learned events, is not a sophisticated projection ;; also, plenty of compute (just use subjective ordering?)
+
+              projected-creator->unique-tip-seq      (->> projected-ufws (map hg/event->creator->unique-tip))
+              projected-received-creators            (apply set/intersection (map (comp set keys) projected-creator->unique-tip-seq))
+              projected-creator->received-unique-tip (->> projected-creator->unique-tip-seq
+                                                          (map #(select-keys % projected-received-creators))
+                                                          (apply merge-with hg/min-sp))
+              prev-creator->received-unique-tip      (:concluded-round/creator->received-unique-tip cr)
+              projected-es-r                         (->> projected-creator->received-unique-tip
+                                                          (mapcat (fn [[c received-unique-tip]]
+                                                                    (->> received-unique-tip
+                                                                         (iterate hg/self-parent)
+                                                                         (take-while some?)
+                                                                         (take-while (fn [sp-evt] (not (hash= sp-evt (prev-creator->received-unique-tip c)))))))))
+
+              ;; forks do not affect that we did receive some prior non-forked event of that creator
+              projected-creator->received-unique-tip (merge-with hg/max-sp
+                                                                 prev-creator->received-unique-tip
+                                                                 projected-creator->received-unique-tip)
+
+
+              ?projected-last-received-event (hg/->?received-event cr projected-cr-r projected-es-r)
+              db                             (hg/cr-db cr)
+              projected-db                   (if (nil? ?projected-last-received-event)
+                                               db
+                                               (hg/prev-db+received-event->db db ?projected-last-received-event))
+              projected-stake-map            (-> projected-db :stake-map)
+              projected-cr                   (cond-> (hash-map :concluded-round/r                            projected-cr-r
+                                                               :concluded-round/ws                           #{event}
+                                                               :concluded-round/ufws                         #{event}
+                                                               :concluded-round/es-r                         projected-es-r
+                                                               :concluded-round/creator->received-unique-tip projected-creator->received-unique-tip
+                                                               :concluded-round/db                           projected-db
+                                                               :concluded-round/stake-map                    projected-stake-map
+                                                               :concluded-round/prev-concluded-round         cr)
+                                                     ?projected-last-received-event (assoc :concluded-round/last-received-event ?projected-last-received-event))]
         projected-cr))))
 
-(defn ->projected-db [event]
-  (-> event ->projected-cr l hg/cr-db))
+(defn event->projected-db [event]
+  (-> event event->projected-cr hg/cr-db))
 
-(def *topic->projected-db
-  (lazy-derived-atom [as/*topic->tip-taped]
-    (fn [topic->tip-taped]
-      (l [::derive-*topic->projected-db topic->tip-taped])
-      (l (->> topic->tip-taped
-              (filter (fn [[_topic tip-taped]] (l (tip-taped->consensus-enabled? (l tip-taped)))))
-              (map (fn [[topic tip-taped]]
-                     [topic (l (-> tip-taped ->projected-db))]))
-              (into {}))))))
+(deflda *topic-path->projected-cr [as/*topic-path->tip-taped] (map-vals event->projected-cr))
+(deflda *topic-path->projected-db [*topic-path->projected-cr] (map-vals hg/cr->db))
+(deflda *topic-path->projected-member-aid->ke [*topic-path->projected-db] (map-vals :member-aid->ke))
