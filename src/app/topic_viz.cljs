@@ -194,8 +194,9 @@
                          #_(reset! hga-state/*just-played< just-played<))
 
                        (when (not (hash= old-viz-cr new-viz-cr))
-                         (let [initial-cr (get @as/*topic-path->initial-cr topic-path)]
-                           (hga-transitions/transition-on-cr-change! topic-path new-creator->viz-x initial-cr old-viz-cr new-viz-cr)))))
+                         (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
+                               initial-cr        (get @as/*topic-path->initial-cr topic-path)]
+                           (hga-transitions/weave-cr! topic-path initial-tip-taped initial-cr new-creator->viz-x old-viz-cr new-viz-cr)))))
 
                    (let [tips-played>                       (reverse tips-played<)
                          [tips-to-play> new-tips-behind>]   (->> tips-behind> (split-with #(not (hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll))))
@@ -226,9 +227,10 @@
                                                                     new-creator->viz-x))]
                            (hga-transitions/re-position! topic-path old-x->new-x)))
 
-                       (let [initial-cr (get @as/*topic-path->initial-cr topic-path)]
-                         (when (not (hash= old-viz-cr new-viz-cr))
-                           (hga-transitions/transition-on-cr-change! topic-path new-creator->viz-x initial-cr old-viz-cr new-viz-cr)))
+                       (when (not (hash= old-viz-cr new-viz-cr))
+                         (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
+                               initial-cr        (get @as/*topic-path->initial-cr topic-path)])
+                         (hga-transitions/unweave-cr! topic-path new-creator->viz-x old-viz-cr new-viz-cr))
 
                        (when-not (empty? just-rewinded>)
                          (hga-transitions/rewind! topic-path just-rewinded>)))))))))
