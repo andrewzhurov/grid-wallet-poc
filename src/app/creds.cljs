@@ -4,7 +4,9 @@
    [hashgraph.topic :as hgt]
    [hashgraph.members :as hg-members]
    [hashgraph.schemas :as hgs]
-   [hashgraph.utils.core :refer [xor hash= not-neg mean conjs conjv vec-union map-keys map-vals filter-map-vals reverse-map map-prim] :refer-macros [defn* l letl letl2 when-let*] :as utils]
+   [hashgraph.utils.core
+    :refer [xor hash= not-neg mean conjs conjv vec-union map-keys map-vals filter-map-vals reverse-map map-prim indexed]
+    :refer-macros [defn* l letl letl2 when-let*] :as utils]
    [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda defda]]
 
    [hashgraph.app.avatars :as hga-avatars]
@@ -512,31 +514,22 @@
 
 (def pub-db-keys
   [:topic-name
-   :member-aids
-   :member-aid->ke
-   :member-aid->signing-weight
-   :member-aid->member-init-keys
-   :member-aid->member-init-keys-log ;; can be computed out of pub db
-   ;; :member-init-keys ;; member-aid->member-init-keys used instead in member-aid-info
+
+   :aids#-log
+   :aid$->ke
+
+   :member-aids$-log
+   :member-aids$
+   :member-aid$->signing-weight
+   :member-aid$->member-init-keys
+   :member-aid$->member-init-keys-log
+
    :member-init-key->init-key
    :init-key->known-control
    :init-key->did-peer])
+
 (defn db->pub-db [{:keys [member-aid->member-init-keys member-init-key->init-key] :as db}]
-  #_(let [member-aid->init-keys (->> member-aid->member-init-keys (map-vals (fn [member-init-keys] (->> member-init-keys (map member-init-key->init-key)))))])
-  (select-keys db pub-db-keys)
-  #_(-> db
-      (dissoc :ke))
-  #_(select-keys db [:topic-name
-                     :member-aids
-                     :member-aid->ke
-                     :member-aid->signing-weight
-                     :member-aid->member-init-keys
-                     :member-aid->member-init-keys-log
-                     ;; :member-init-keys
-                     :member-init-key->init-key
-                     :init-key->known-control
-                     :init-key->did-peer
-                     ]))
+  (select-keys db pub-db-keys))
 
 (defn pub-db-anchor [db]
   (l [:pub-db-anchor db])
@@ -601,12 +594,12 @@
          (map member-init-key->init-key)
          (mapv init-key->signing-key))))
 
-(defn db->wanted-to-rotate? [{:keys [ke member-aids member-aid->member-init-keys member-init-keys member-init-key->init-key init-key->known-control init-key->did-peer] :as db}]
+(defn db->wanted-to-rotate? [{:keys [ke member-aids$ member-aid$->member-init-keys member-init-keys member-init-key->init-key init-key->known-control init-key->did-peer] :as db}]
   (l [:db->wanted-to-rotate? db])
   (and (some? ke)
-       member-aids
-       member-aid->member-init-keys
-       (l (->> member-aids (every? member-aid->member-init-keys)))
+       member-aids$
+       member-aid$->member-init-keys
+       (l (->> member-aids$ (every? member-aid$->member-init-keys)))
        member-init-key->init-key
        init-key->known-control
        (l (->> member-init-keys (every? member-init-key->init-key)))
@@ -637,10 +630,10 @@
          (map member-init-key->init-key)
          (mapv init-key->next-signing-key-hash))))
 
-(defn db->threshold [{:keys [member-aids member-aid->signing-weight member-aid->threshold]}]
-  (->> member-aids
-       (mapcat (fn [member-aid]
-                 [{(member-aid->signing-weight member-aid) (member-aid->threshold member-aid)}]))
+(defn db->threshold [{:keys [member-aids$ member-aid$->signing-weight member-aid$->threshold]}]
+  (->> member-aids$
+       (mapcat (fn [member-aid$]
+                 [{(member-aid$->signing-weight member-aid$) (member-aid$->threshold member-aid$)}]))
        vec))
 
 (defn sc-incept [{:keys [threshold] :as db} {:received-event/keys [received-time] :as re}]
@@ -723,21 +716,22 @@
     (apply gc/mix colors)))
 
 ;; key may have been removed, yet if there are pending events from it - show as disabled member, preserving idx; when no more events left - remove member from contributing to idx
-(defn* ^:memoizing ?ke+db->member-aid-info [?ke {:keys [topic-name member-aids member-aid->ke member-aid->signing-weight #_total-stake member-aid->member-init-keys member-aid->member-init-keys-log #_member-init-keys member-init-key->init-key] :as db}
-                                            status stake stake-map child-depth
-                                            member-init-keys-log active-member-init-keys pending-member-init-keys eligible-member-init-keys ;; present? pending->carry
-                                            & [?parent-member-init-key->member-init-key ?prev-leaf-pos-x]]
+(defn ?ke+db->member-aid-info [?ke {:keys [topic-name member-aids$-log aid$->ke member-aids$ member-aid$->signing-weight member-aid$->member-init-keys member-aid$->member-init-keys-log member-init-key->init-key] :as db}
+                               status stake stake-map child-depth
+                               member-init-keys-log active-member-init-keys pending-member-init-keys eligible-member-init-keys ;; present? pending->carry
+                               & [?parent-member-init-key->member-init-key ?prev-leaf-pos-x]]
   (l [:?ke+db->member-aid-info ?ke db status stake stake-map child-depth active-member-init-keys pending-member-init-keys eligible-member-init-keys ?parent-member-init-key->member-init-key ?prev-leaf-pos-x])
   (letl2 [alias                (or (some-> ?ke ke->pub-db :topic-name)
                                    topic-name
                                    "???")
+          ?aid                 (-> ?ke ke->ke-icp)
           base-member-aid-info (cond-> {:member-aid-info/alias       alias
                                         :member-aid-info/status      status
                                         :member-aid-info/stake       stake
                                         :member-aid-info/child-depth child-depth}
-                                 ?ke (assoc :member-aid-info/aid           (-> ?ke ke->ke-icp)
-                                            :member-aid-info/creation-time (some-> ?ke ke->ke-icp aid->creation-time)))]
-    (if-let [member-init-key (when (and (empty? member-aids) (= 1 (count eligible-member-init-keys)))
+                                 ?aid (assoc :member-aid-info/aid#          (-> ?aid hash)
+                                              :member-aid-info/creation-time (-> ?aid aid->creation-time)))]
+    (if-let [member-init-key (when (and (empty? member-aids$) (= 1 (count eligible-member-init-keys)))
                                (first eligible-member-init-keys))]
       (letl2 [creator              (-indexOf member-init-keys-log member-init-key)
               leaf-member-aid-info (-> base-member-aid-info
@@ -754,44 +748,41 @@
         leaf-member-aid-info)
       (letl2 [{member-aid-infos :member-aid-infos-acc
                ?max-leaf-pos-x  :max-leaf-pos-x-acc}
-              (->> (set/union (set member-aids) (set (keys member-aid->ke)))
-                   (sort-by aid->creation-time)
-                   (reduce (fn [{:keys [member-aid-infos-acc] ?max-leaf-pos-x-acc :max-leaf-pos-x-acc :as acc} member-aid]
-                             (l [:reduce-parent-member-aid-infos acc member-aid])
+              (->> member-aids$-log
+                   (filter aid$->ke)
+                   (sort-by (comp aid->creation-time ke->ke-icp aid$->ke))
+                   (reduce (fn [{:keys [member-aid-infos-acc] ?max-leaf-pos-x-acc :max-leaf-pos-x-acc :as acc} member-aid$]
+                             (l [:reduce-parent-member-aid-infos acc member-aid$])
                              (letl2 [parent-member-init-key->member-init-key (if-not ?parent-member-init-key->member-init-key
                                                                                identity
                                                                                (comp ?parent-member-init-key->member-init-key (l member-init-key->init-key)))
-                                     active-member-init-keys*   (->> member-aid
-                                                                     l
-                                                                     member-aid->member-init-keys
-                                                                     l
+                                     active-member-init-keys*   (->> member-aid$
+                                                                     member-aid$->member-init-keys
                                                                      (map parent-member-init-key->member-init-key)
                                                                      doall
-                                                                     l
                                                                      set
-                                                                     l
                                                                      (set/intersection (set active-member-init-keys)))
-                                     pending-member-init-keys*  (->> member-aid
-                                                                     member-aid->member-init-keys-log
+                                     pending-member-init-keys*  (->> member-aid$
+                                                                     member-aid$->member-init-keys-log
                                                                      (map parent-member-init-key->member-init-key)
                                                                      set
-                                                                     (set/intersection (set pending-member-init-keys))) ;; TODO add logging
+                                                                     (set/intersection (set pending-member-init-keys)))
                                      eligible-member-init-keys* (set/union active-member-init-keys* pending-member-init-keys*)]
                                (if (empty? eligible-member-init-keys*)
                                  acc
                                  (letl2 [member-aid-status (cond (not-empty active-member-init-keys*)  :active
                                                                  (not-empty pending-member-init-keys*) :pending)
-                                         ?member-pub-db    (and member-aid->ke (some-> member-aid member-aid->ke ke->pub-db))
+                                         ?member-pub-db    (when aid$->ke (some-> member-aid$ aid$->ke ke->pub-db))
 
                                          ?member-aid-info
-                                         (?ke+db->member-aid-info (when member-aid->ke (-> member-aid member-aid->ke))
+                                         (?ke+db->member-aid-info (when aid$->ke (-> member-aid$ aid$->ke))
                                                                   ?member-pub-db
                                                                   member-aid-status
                                                                   (if-not (= :active member-aid-status)
                                                                     0
                                                                     (-> stake
-                                                                        (* (/ (first (member-aid->signing-weight member-aid))
-                                                                              (second (member-aid->signing-weight member-aid))))))
+                                                                        (* (/ (first (member-aid$->signing-weight member-aid$))
+                                                                              (second (member-aid$->signing-weight member-aid$))))))
                                                                   stake-map
                                                                   (inc child-depth)
                                                                   member-init-keys-log
@@ -850,7 +841,7 @@
             parent-member-aid-info))))))
 
 
-(def db-establishment-keys [:topic-name :member-aids :member-aid->ke :ke :member-aid->signing-weight])
+(def db-establishment-keys [:topic-name :ke :aids#-log :aid$->ke :member-aids$ :member-aid$->member-init-keys :member-aid$->signing-weight])
 
 (defn* ^:memoizing cr->cr-est [cr]
   (let [?prev-cr (:concluded-round/prev-concluded-round cr)]
@@ -876,52 +867,51 @@
     (?ke+db->member-aid-info ?ke-est db-est :active hg/total-stake stake-map-est 0 member-init-keys-log active-member-init-keys# pending-member-init-keys# eligible-member-init-keys#)))
 
 
-(defn db-with-aid-control-propagated [{:keys [member-aids member-aids-log member-aid->ke member-aid->member-init-keys member-aid->member-init-keys-log member-aid->threshold
+(defn db-with-aid-control-propagated [{:keys [aid$->ke member-aids$ member-aids$-log member-aid$->member-init-keys member-aid$->member-init-keys-log member-aid$->threshold
                                               member-init-keys-log
                                               member-init-key->did-peer]
-                                       :or   {member-aids-log                  []
-                                              member-aid->member-init-keys-log (hash-map)
-                                              member-init-keys-log             []}
+                                       :or   {member-aids$-log                  []
+                                              member-aid$->member-init-keys-log (hash-map)
+                                              member-init-keys-log              []}
                                        :as   db}]
   (l [:db-with-aid-control-propagated db])
-  (if (l (empty? member-aids))
+  (if (l (empty? member-aids$))
     db
-    (letl2 [new-member-aids-log                (vec-union member-aids-log member-aids)
-            new-member-aid->member-init-keys   (merge (select-keys member-aid->member-init-keys member-aids)
-                                                      (->> (l (select-keys member-aid->ke member-aids))
-                                                           (filter-map-vals (fn [member-ke]
-                                                                              (l member-ke)
-                                                                              (when-let* [member-db                    (-> member-ke ke->pub-db)
-                                                                                          member-init-key->signing-key (-> member-db db->init-key->signing-key)
-                                                                                          signing-key->member-init-key (-> member-init-key->signing-key reverse-map)
-                                                                                          signing-keys                 (-> member-ke ->latest-establishment-key-event :key-event/signing-keys)]
-                                                                                (->> signing-keys
-                                                                                     (map signing-key->member-init-key)
-                                                                                     (filter some?)
-                                                                                     vec
-                                                                                     not-empty))))))
+    (letl2 [new-member-aids$-log                (vec-union member-aids$-log member-aids$)
+            new-member-aid$->member-init-keys   (merge (select-keys member-aid$->member-init-keys member-aids$)
+                                                       (->> (l (select-keys aid$->ke member-aids$))
+                                                            (filter-map-vals (fn [member-ke]
+                                                                               (l member-ke)
+                                                                               (when-let* [member-db                    (-> member-ke ke->pub-db)
+                                                                                           member-init-key->signing-key (-> member-db db->init-key->signing-key)
+                                                                                           signing-key->member-init-key (-> member-init-key->signing-key reverse-map)
+                                                                                           signing-keys                 (-> member-ke ->latest-establishment-key-event :key-event/signing-keys)]
+                                                                                 (->> signing-keys
+                                                                                      (map signing-key->member-init-key)
+                                                                                      (filter some?)
+                                                                                      vec
+                                                                                      not-empty))))))
 
-            new-member-aid->member-init-keys-log (merge-with (fn [member-init-keys-log new-member-init-keys]
-                                                               (vec (distinct (concat member-init-keys-log new-member-init-keys))))
-                                                             member-aid->member-init-keys-log
-                                                             new-member-aid->member-init-keys)
+            new-member-aid$->member-init-keys-log (merge-with vec-union
+                                                              member-aid$->member-init-keys-log
+                                                              new-member-aid$->member-init-keys)
 
-            new-member-aid->signing-weight (->> member-aids
-                                                (into (hash-map) (map (fn [member-aid] [member-aid (case (count member-aids)
-                                                                                                     1 [1 1]
-                                                                                                     [1 2])]))))
+            new-member-aid$->signing-weight (->> member-aids$
+                                                 (into (hash-map) (map (fn [member-aid] [member-aid (case (count member-aids$)
+                                                                                                      1 [1 1]
+                                                                                                      [1 2])]))))
 
 
-            new-member-aid->threshold (merge (select-keys member-aid->threshold member-aids)
-                                             (->> (select-keys member-aid->ke member-aids)
-                                                  (filter-map-vals (fn [ke] (-> ke ->latest-establishment-key-event :key-event/threshold)))))
+            new-member-aid$->threshold (merge (select-keys member-aid$->threshold member-aids$)
+                                              (->> (select-keys aid$->ke member-aids$)
+                                                   (filter-map-vals (fn [ke] (-> ke ->latest-establishment-key-event :key-event/threshold)))))
 
-            new-threshold   (db->threshold {:member-aids                member-aids
-                                            :member-aid->signing-weight new-member-aid->signing-weight
-                                            :member-aid->threshold      new-member-aid->threshold})
+            new-threshold   (db->threshold {:member-aids$                member-aids$
+                                            :member-aid$->signing-weight new-member-aid$->signing-weight
+                                            :member-aid$->threshold      new-member-aid$->threshold})
             #_#_total-stake hg/total-stake #_ (->> member-aid->signing-weight vals (reduce (fn [acc [nom denom]] (+ acc (/ nom denom))) 0))
 
-            new-member-init-keys          (->> member-aids (mapcat new-member-aid->member-init-keys) vec)
+            new-member-init-keys          (->> member-aids$ (mapcat new-member-aid$->member-init-keys) vec)
             new-member-init-keys-log      (vec-union member-init-keys-log new-member-init-keys)
 
             fraction-paths                (-> new-threshold threshold->fractions-paths)
@@ -934,35 +924,23 @@
                                                                        (let [rel-key-weight (nth rel-key-weights (-indexOf new-member-init-keys (nth new-member-init-keys-log new-active-creator)))
                                                                              stake          (-> hg/total-stake (* rel-key-weight))]
                                                                          [new-active-creator stake])))))
-            new-member-init-key->did-peer (merge member-init-key->did-peer
-                                                 (-> member-aid->ke
-                                                     (select-keys member-aids)
-                                                     vals
-                                                     (->> (map (fn [member-ke] (-> member-ke ke->pub-db :init-key->did-peer)))
-                                                          (apply merge))))
-            db-propagation               {:member-aids-log                  new-member-aids-log
-                                          :member-aid->member-init-keys     new-member-aid->member-init-keys
-                                          :member-aid->member-init-keys-log new-member-aid->member-init-keys-log
-                                          :member-aid->signing-weight       new-member-aid->signing-weight
-                                          :member-aid->threshold            new-member-aid->threshold
-                                          :threshold                        new-threshold
-                                          :member-init-keys                 new-member-init-keys
-                                          :member-init-keys-log             new-member-init-keys-log
-                                          :member-init-key->did-peer        new-member-init-key->did-peer
-                                          :active-creators                  new-active-creators
-                                          :stake-map                        new-active-creator->stake}]
+            new-member-init-key->did-peer (or (merge member-init-key->did-peer
+                                                     (->> (select-keys aid$->ke member-aids$)
+                                                          (map (fn [[_ member-ke]] (-> member-ke ke->pub-db :init-key->did-peer)))
+                                                          (apply merge)))
+                                              (hash-map))
+            db-propagation               {:member-aids$-log                  new-member-aids$-log
+                                          :member-aid$->member-init-keys     new-member-aid$->member-init-keys
+                                          :member-aid$->member-init-keys-log new-member-aid$->member-init-keys-log
+                                          :member-aid$->signing-weight       new-member-aid$->signing-weight
+                                          :member-aid$->threshold            new-member-aid$->threshold
+                                          :threshold                         new-threshold
+                                          :member-init-keys                  new-member-init-keys
+                                          :member-init-keys-log              new-member-init-keys-log
+                                          :member-init-key->did-peer         new-member-init-key->did-peer
+                                          :active-creators                   new-active-creators
+                                          :stake-map                         new-active-creator->stake}]
       (merge db db-propagation))))
-
-
-(declare max-ke)
-(hg/reg-tx-handler! :inform-novel-ke
-    (fn [db _ [_ ke]]
-      (let [aid (ke->ke-icp ke)]
-        ;; TODO security: check that aid's key informed
-        (-> db
-            (update-in [:member-aid->ke aid] max-ke ke)
-            ;; will override :member-aid->stake, tweak when stake can be altered by members
-            (db-with-aid-control-propagated)))))
 
 
 (defn create-aided-topic! [my-aid-topic-path init-db*]
@@ -1551,6 +1529,7 @@
 (defn* ke->?aid-name [ke]
   (-> ke ke->pub-db :topic-name))
 
+#_
 (defn evt->init-key [{:event/keys [creator] :as evt}]
   (or (some-> evt
               hg/evt->db
@@ -1558,6 +1537,7 @@
               (init-key->known-control+key->init-key creator))
       creator))
 
+#_
 (defn evt->active-init-keys [evt]
   (or (when-let [{:key-event/keys [signing-keys init-key->known-control]} (-> evt evt->?ke)]
         (->> signing-keys
@@ -1568,6 +1548,7 @@
              (not-empty)))
       (hgt/?event->creators evt)))
 
+#_
 (defn evt->?active-my-did-peer [evt]
   (let [active-init-keys (-> evt evt->active-init-keys)]
     ((set (l active-init-keys)) (l @as/*my-did-peer))))
@@ -1593,6 +1574,7 @@
           :control/next-signing-key      "gleif2"
             :control/next-next-signing-key "gleif3"})))
 
+#_
 (deftest evt->init-key-test
   (is (= "gleif" (evt->init-key gleif-e0)))
   (is (= "gleif" (evt->init-key gleif-e1)))
@@ -1645,10 +1627,10 @@
 (deflda *topic-path->my-ke [as/*topic-path->db]
   (filter-map-vals :ke))
 
-(deflda *topic-path->my-aid [*topic-path->my-ke]
-  (map-vals ke->ke-icp))
+(deflda *topic-path->my-aid# [*topic-path->my-ke]
+  (map-vals (comp hash ke->ke-icp)))
 
-(deflda *my-aid-topic-paths [*topic-path->my-aid]
+(deflda *my-aid-topic-paths [*topic-path->my-aid#]
   (comp set keys))
 
 (deflda *my-aid-topics [*my-aid-topic-paths]
@@ -1667,7 +1649,7 @@
          (drop-while my-aid-topic-paths)
          (not-empty))))
 
-(deflda *selected-my-aid [*topic-path->my-aid *selected-my-aid-topic-path] get)
+(deflda *selected-my-aid# [*topic-path->my-aid# *selected-my-aid-topic-path] get)
 (deflda *selected-my-ke [*topic-path->my-ke *selected-my-aid-topic-path] get)
 
 (deflda *topic-path->participating-topic-paths [as/*topic-paths]
@@ -1685,20 +1667,20 @@
                           (filter (comp not my-aid-topic-paths))
                           (set)))))))
 
-(deflda *my-aid->my-ke [*topic-path->my-ke]
+(deflda *my-aid#->my-ke [*topic-path->my-ke]
   (fn [topic-path->my-ke]
     (->> topic-path->my-ke
          vals
-         (into (hash-map) (map (fn [my-ke] [(ke->ke-icp my-ke) my-ke]))))))
+         (into (hash-map) (map (fn [my-ke] [(hash (ke->ke-icp my-ke)) my-ke]))))))
 
-(deflda *my-aids [*my-aid->my-ke] (comp set keys))
+(deflda *my-aids# [*my-aid#->my-ke] (comp set keys))
 
-(deflda *topic-path->my-aid-topic-paths [*topic-path->participating-topic-paths *topic-path->my-aid]
-  (fn [topic-path->participating-topic-paths topic-path->my-aid]
+(deflda *topic-path->my-aid-topic-paths [*topic-path->participating-topic-paths *my-aid-topic-paths]
+  (fn [topic-path->participating-topic-paths my-aid-topic-paths]
     (->> topic-path->participating-topic-paths
          (filter-map-vals (fn [participating-topic-paths]
                             (->> participating-topic-paths
-                                 (filter topic-path->my-aid)
+                                 (filter my-aid-topic-paths)
                                  set
                                  (not-empty)))))))
 
@@ -1722,39 +1704,39 @@
          vals
          (apply set/union))))
 
-(deflda *contact-topic-path->connected-aids [*contact-topic-paths]
+(deflda *contact-topic-path->connected-aids# [*contact-topic-paths]
   (fn [contact-topic-paths]
     (->> contact-topic-paths
          (into (hash-map) (map (fn [contact-topic-path]
-                                 (let [contact-topic (last contact-topic-path)
-                                       connectee-aid (-> contact-topic :connect-invite-accepted :connect-invite-accepted/connectee-aid)
-                                       target-aid    (-> contact-topic :connect-invite-accepted :connect-invite-accepted/connect-invite :connect-invite/target-aid)]
-                                   [contact-topic-path #{connectee-aid target-aid}])))))))
+                                 (let [contact-topic  (last contact-topic-path)
+                                       connectee-aid# (-> contact-topic :connect-invite-accepted :connect-invite-accepted/connectee-aid#)
+                                       target-aid#    (-> contact-topic :connect-invite-accepted :connect-invite-accepted/connect-invite :connect-invite/target-aid#)]
+                                   [contact-topic-path #{connectee-aid# target-aid#}])))))))
 
-(deflda *connected-aids->contact-topic-path [*contact-topic-path->connected-aids] reverse-map)
+(deflda *connected-aids#->contact-topic-path [*contact-topic-path->connected-aids#] reverse-map)
 
-(deflda *topic-path->contact-aids [*contact-topic-path->connected-aids *topic-path->my-aid]
-  (fn [contact-topic-path->connected-aids topic-path->my-aid]
-    (->> contact-topic-path->connected-aids
-         (reduce (fn [acc [contact-topic-path connected-aids]]
+(deflda *topic-path->contact-aids# [*contact-topic-path->connected-aids# *topic-path->my-aid#]
+  (fn [contact-topic-path->connected-aids# topic-path->my-aid#]
+    (->> contact-topic-path->connected-aids#
+         (reduce (fn [acc [contact-topic-path connected-aids#]]
                    (let [my-aid-topic-path (vec (butlast contact-topic-path))
-                         my-aid            (topic-path->my-aid my-aid-topic-path)
-                         contact-aid       (first (disj connected-aids my-aid))]
-                     (assoc! acc my-aid-topic-path (conjs (get acc my-aid-topic-path) contact-aid))))
+                         my-aid#           (topic-path->my-aid# my-aid-topic-path)
+                         contact-aid#      (first (disj connected-aids# my-aid#))]
+                     (assoc! acc my-aid-topic-path (conjs (get acc my-aid-topic-path) contact-aid#))))
                  (transient (hash-map)))
          persistent!)))
 
-(deflda *contact-aids [*topic-path->contact-aids]
-  (fn [topic-path->contact-aids]
-    (->> topic-path->contact-aids
+(deflda *contact-aids# [*topic-path->contact-aids#]
+  (fn [topic-path->contact-aids#]
+    (->> topic-path->contact-aids#
          vals
          (apply set/union))))
 
-(deflda *topic-path->other-contact-aids [*my-aid-topic-paths *topic-path->contact-aids *contact-aids]
-  (fn [my-aid-topic-paths topic-path->contact-aids contact-aids]
+(deflda *topic-path->other-contact-aids# [*my-aid-topic-paths *topic-path->contact-aids# *contact-aids#]
+  (fn [my-aid-topic-paths topic-path->contact-aids# contact-aids#]
     (->> my-aid-topic-paths
          (into (hash-map) (comp (map (fn [my-aid-topic-path]
-                                       [my-aid-topic-path (set/difference contact-aids (-> my-aid-topic-path topic-path->contact-aids))]))
+                                       [my-aid-topic-path (set/difference contact-aids# (-> my-aid-topic-path topic-path->contact-aids#))]))
                                 (filter (comp not-empty second)))))))
 
 
@@ -1859,36 +1841,6 @@
            (map (fn [controlling-aid] (root-aids-sorted+aid->x root-aids-sorted controlling-aid)))
            mean))))
 
-#_
-(defn* ^:memoizing evt->root-aids-sorted [evt]
-  (->> evt
-       hg/evt->db
-       :member-aid->did-peers
-       keys
-       member-aids->controlling-aid-hierarchy-sorted
-       flatten
-       vec))
-
-#_
-(defn* ^:memoizing evt+aid->x [evt aid]
-  (let [root-aids-sorted (evt->root-aids-sorted evt)]
-    (root-aids-sorted+aid->x root-aids-sorted aid)))
-
-
-#_
-(deflda *aid->avatar [*aid->seed]
-  (fn [aid->seed]
-    (l [:derive-*aid->avatar aid->seed])
-    (l (->> aid->seed
-            (map-vals (fn [seed]
-                        (case (rem seed 2)
-                          0 hga-avatars/male-avatar
-                          1 hga-avatars/female-avatar)))))))
-
-(deflda *topic-path->member-aids [as/*topic-path->db]
-  (map-vals :member-aids))
-
-
 (defn latest-control! [topic-path rotation-ke]
   (let [control (actrl/topic-path->control topic-path)]
     (if-not (unblinded? rotation-ke (actrl/topic-path->nk topic-path))
@@ -1911,40 +1863,57 @@
                    (doseq [novel-my-ke-rot novel-my-kes-rot<]
                      (latest-control! novel-topic-path novel-my-ke-rot)))))))
 
+
 ;; ------ graft-ke ------
-(def ke-graft-aid-idx 1)
+
+;; (def ke-graft-aid# :ke-graft/aid#)
+;; (def ke-graft-aid$ :ke-graft/aid$)
+;; (def ke-graft-scions :ke-graft/scions)
+;; (def ke-graft-stem-idx :ke-graft/stem-idx)
+
+(def ke-graft-aid# 0)
+(def ke-graft-aid$ 1)
 (def ke-graft-scions 2)
 (def ke-graft-stem-idx 3)
-(declare ?ke->index)
-(defn member-aids-log+?ke-stem+ke-tip->ke-graft [member-aids-log ?ke-stem ke-tip]
-  (let [aid-idx  (-indexOf member-aids-log (ke->ke-icp ke-tip))
-        scions   (->> ke-tip
-                     (iterate :key-event/prior)
-                     (take-while some?)
-                     (take-while (fn [ke] (not (hash= ke ?ke-stem))))
-                     (map (fn [ke] (dissoc ke :key-event/prior)))
-                     reverse
-                     vec)
-        stem-idx (?ke->index ?ke-stem)] ;; -1 if no ?ke-stem
-    {ke-graft-aid-idx  aid-idx
-     ke-graft-scions   scions
-     ke-graft-stem-idx (?ke->index ?ke-stem)}))
 
-(defn db+ke-graft->grafted-ke [{:keys [member-aids-log member-aid->ke] :as db} ke-graft]
-  (let [aid-idx              (get ke-graft ke-graft-aid-idx)
-        scions               (get ke-graft ke-graft-scions)
-        stem-idx             (get ke-graft ke-graft-stem-idx)
-        aid                  (member-aids-log aid-idx)
-        ?<<ke                (member-aid->ke aid)
-        <<ke-idx             (?ke->index ?<<ke)
-        to-drop-scions-count (- <<ke-idx stem-idx)
-        to-graft-scions      (subvec scions to-drop-scions-count)
-        grafted-ke           (->> to-graft-scions
-                                  (reduce (fn [?ke-acc scion]
-                                            (cond-> scion
-                                              ?ke-acc (assoc :key-event/prior ?ke-acc)))
-                                          ?<<ke))]
-    grafted-ke))
+(declare ?ke->index)
+(defn aids#-log+?ke-stem+ke-tip->ke-graft [aid#-log ?ke-stem ke-tip]
+  (let [aid#     (-> ke-tip ke->ke-icp hash)
+        aid$     (-indexOf aid#-log aid#)
+        scions   (->> ke-tip
+                      (iterate :key-event/prior)
+                      (take-while some?)
+                      (take-while (fn [ke] (not (hash= ke ?ke-stem))))
+                      (map (fn [ke] (dissoc ke :key-event/prior)))
+                      reverse
+                      vec)
+        stem-idx (?ke->index ?ke-stem)] ;; -1 if no ?ke-stem
+    (cond-> {ke-graft-aid$     aid$
+             ke-graft-scions   scions
+             ke-graft-stem-idx (?ke->index ?ke-stem)}
+      (= -1 stem-idx) (assoc ke-graft-aid# aid#))))
+
+(defn db+ke-graft->grafted-db [{:keys [aids#-log aid$->ke] :as db} ke-graft]
+  (letl2 [[new-aids#-log aid$] (if-let [aid$ (not-neg (get ke-graft ke-graft-aid$))]
+                                 [aids#-log aid$]
+                                 (indexed aids#-log (get ke-graft ke-graft-aid#)))
+
+          scions               (get ke-graft ke-graft-scions)
+          stem-idx             (get ke-graft ke-graft-stem-idx)
+          ?<<ke                (-> aid$ aid$->ke)
+          <<ke-idx             (?ke->index ?<<ke)
+          known-count-atop-stem (- <<ke-idx stem-idx)]
+    (if (>= known-count-atop-stem (count scions))
+      db
+      (let [to-graft-scions (subvec scions known-count-atop-stem)
+            grafted-ke      (->> to-graft-scions
+                                 (reduce (fn [?ke-acc scion]
+                                           (cond-> scion
+                                             ?ke-acc (assoc :key-event/prior ?ke-acc)))
+                                         ?<<ke))]
+        (-> db
+            (assoc :aids#-log new-aids#-log
+                   :aid$->ke  (assoc aid$->ke aid$ grafted-ke)))))))
 
 (let [ke0 {:key-event/type :inception}
       ke1 {:key-event/type  :interaction
@@ -1954,78 +1923,106 @@
       ke3 {:key-event/type  :interaction
            :key-event/prior ke2}
 
-      ke-stem+ke-tip->ke-graft {[nil ke0] {ke-graft-aid-idx  0
-                                           ke-graft-scions   [{:key-event/type :inception}]
-                                           ke-graft-stem-idx -1}
-                                [ke0 ke1] {ke-graft-aid-idx  0
-                                           ke-graft-scions   [{:key-event/type :interaction}]
-                                           ke-graft-stem-idx 0}
-                                [ke1 ke3] {ke-graft-aid-idx  0
-                                           ke-graft-scions   [{:key-event/type :rotation}
-                                                              {:key-event/type :interaction}]
-                                           ke-graft-stem-idx 1}}
-      ke-graft->db->grafted-ke {(ke-stem+ke-tip->ke-graft [nil ke0]) {{:member-aids-log [ke0] :member-aid->ke {}}        ke0
-                                                                      {:member-aids-log [ke0] :member-aid->ke {ke0 ke0}} ke0}
-                                (ke-stem+ke-tip->ke-graft [ke0 ke1]) {{:member-aids-log [ke0] :member-aid->ke {ke0 ke0}} ke1}
-                                (ke-stem+ke-tip->ke-graft [ke1 ke3]) {{:member-aids-log [ke0] :member-aid->ke {ke0 ke1}} ke3
-                                                                      {:member-aids-log [ke0] :member-aid->ke {ke0 ke2}} ke3}}]
-  (deftest member-aids-log+?ke-stem+ke-tip->ke-graft-test
-    (doseq [[[ke-stem ke-tip] ke-graft] ke-stem+ke-tip->ke-graft]
-      (is (= ke-graft (member-aids-log+?ke-stem+ke-tip->ke-graft [ke0] ke-stem ke-tip)))))
-  (deftest db+ke-graft->grafted-ke-test
-    (doseq [[ke-graft db->grafted-ke] ke-graft->db->grafted-ke
-            [db grafted-ke]           db->grafted-ke]
-      (is (= grafted-ke (db+ke-graft->grafted-ke db ke-graft))))))
-#_#_
-(run-test member-aids-log+?ke-stem+ke-tip->ke-graft-test)
-(run-test db+ke-graft->grafted-ke-test)
+      sending-db->ke-stem+ke-tip+ke-graft->receiving-db->grafted-db
+      {{:aids#-log []}
+       {[nil ke0 {ke-graft-aid$     -1
+                  ke-graft-stem-idx -1
+                  ke-graft-scions   [{:key-event/type :inception}]
+                  ke-graft-aid#     (hash ke0)}]
+        {{:aids#-log [] :aid$->ke {}}
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke0}}
+
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke0}} ;; learned already
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke0}} ;; nothing changes
+
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke1}} ;; learned next ke
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke1}} ;; nothing changes
+
+         {:aids#-log [(hash :some-aid)] :aid$->ke {0 {}}} ;; some aid managed to get learned before we grafted
+         {:aids#-log [(hash :some-aid) (hash ke0)] :aid$->ke {0 {} 1 ke0}}}} ;; no fret, idx 1 is given
+
+
+       {:aids#-log [(hash ke0)]}
+       {[ke0 ke1 {ke-graft-aid$     0
+                  ke-graft-stem-idx 0
+                  ke-graft-scions   [{:key-event/type :interaction}]}]
+        {{:aids#-log [(hash ke0)] :aid$->ke {0 ke0}}
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke1}}
+
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke1}} ;; learned already
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke1}} ;; nothing changes
+
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke2}} ;; learned next ke
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke2}} ;; nothing changes
+
+
+         {:aids#-log [(hash ke0) (hash :some-aid)] :aid$->ke {0 ke0 1 {}}}
+         {:aids#-log [(hash ke0) (hash :some-aid)] :aid$->ke {0 ke1 1 {}}}}
+
+        [ke1 ke3 {ke-graft-aid$     0
+                  ke-graft-stem-idx 1
+                  ke-graft-scions   [{:key-event/type :rotation} {:key-event/type :interaction}]}]
+        {{:aids#-log [(hash ke0)] :aid$->ke {0 ke1}}
+         {:aids#-log [(hash ke0)] :aid$->ke {0 ke3}}}}}]
+
+  (deftest ke-graft-test
+    (doseq [[sending-db ke-stem+ke-tip+ke-graft->receiving-db->grafted-db] sending-db->ke-stem+ke-tip+ke-graft->receiving-db->grafted-db
+            [[ke-stem ke-tip ke-graft] receiving-db->grafted-db]           ke-stem+ke-tip+ke-graft->receiving-db->grafted-db]
+      #_(l [sending-db ke-stem ke-tip ke-graft])
+      (is (= ke-graft (aids#-log+?ke-stem+ke-tip->ke-graft (:aids#-log sending-db) ke-stem ke-tip)))
+      (doseq [[receiving-db grafted-db] receiving-db->grafted-db]
+        #_(l [sending-db ke-graft receiving-db grafted-db])
+        (is (= grafted-db (db+ke-graft->grafted-db receiving-db ke-graft)))))))
+#_
+(run-test ke-graft-test)
+
 
 (defda *inform-of-my-aid-novel-ke [*topic-path->my-ke *topic-path->participating-topic-paths]
   (fn [topic-path->my-ke topic-path->participating-topic-paths]
     (l [::inform-of-my-aid-novel-ke topic-path->my-ke topic-path->participating-topic-paths])
     (doseq [[topic-path my-ke]       topic-path->my-ke
-            :let                     [my-aid (ke->ke-icp my-ke)
-                                      member-aids# (-> my-ke ke->pub-db :member-aids set)]
-            participating-topic-path (-> topic-path topic-path->participating-topic-paths)
-            :let                     [participating-member-aids# (-> topic-path (@as/*topic-path->db) :member-aids set)]] ;; or look from projected-db?
-      (when (not-empty (set/difference participating-member-aids# member-aids#)) ;; some member of participating topic is not present in to-be-shared aid's members
-        (let [member-aid->ke (get @at/*topic-path->projected-member-aid->ke participating-topic-path)
-              ?my-known-ke (member-aid->ke my-aid)]
-          (when (> (?ke->index my-ke) (?ke->index ?my-known-ke)) ;; perhaps only need to share on control propagation and acdc disclosure
-            (let [{:keys [member-aids-log]} (get @as/*topic-path->db participating-topic-path)
-                  ke-graft                  (member-aids-log+?ke-stem+ke-tip->ke-graft member-aids-log ?my-known-ke my-ke)]
-              (at/add-event! participating-topic-path {:event/tx [:graft-ke ke-graft]}))))))))
+            participating-topic-path (-> topic-path topic-path->participating-topic-paths)]
+      (let [known-aid#->ke (get @at/*topic-path->projected-aid#->ke participating-topic-path)
+            ?my-known-ke   (get known-aid#->ke (-> my-ke ke->ke-icp hash))]
+        ;; perhaps only need to share on control propagation and acdc disclosure
+        (when (and (> (?ke->index my-ke) (?ke->index ?my-known-ke))
+                   ;; some novel establishment event?
+                   #_(->> my-ke
+                        (iterate :key-event/prior)
+                        (take-while some?)
+                        (take-while (fn [ke] (not (hash= ke ?my-known-ke))))
+                        (some ->establishment-key-event?)))
+          (let [{:keys [aids#-log]} (get @as/*topic-path->db participating-topic-path)
+                ke-graft            (aids#-log+?ke-stem+ke-tip->ke-graft aids#-log ?my-known-ke my-ke)]
+            (at/add-event! participating-topic-path {:event/tx [:graft-ke ke-graft]})))))))
 
 (hg/reg-tx-handler! :graft-ke
     (fn [db evt [_ ke-graft]]
-      (let [grafted-ke (db+ke-graft->grafted-ke db ke-graft)
-            aid        (ke->ke-icp grafted-ke)]
-        (-> db
-            (assoc-in [:member-aid->ke aid] grafted-ke)
-            (db-with-aid-control-propagated)))))
+      (-> db
+          (db+ke-graft->grafted-db ke-graft)
+          (db-with-aid-control-propagated))))
 
 
-(defn propose-issue-acdc-join-invite! [my-aid-topic-path issuer-aid issuee-aid]
+(defn propose-issue-acdc-join-invite! [my-aid-topic-path issuer-aid# issuee-aid#]
   (at/add-event! my-aid-topic-path {:event/tx [:propose :issue {:acdc/schema    :acdc-join-invite
-                                                                :acdc/issuer    issuer-aid
-                                                                :acdc/attribute {:issuee  issuee-aid
+                                                                :acdc/issuer    issuer-aid#
+                                                                :acdc/attribute {:issuee  issuee-aid#
                                                                                  :purpose :join-invite}}]}))
 
-(defn propose-issue-acdc-qvi! [issuer-topic-path issuer-aid issuee-aid]
+(defn propose-issue-acdc-qvi! [issuer-topic-path issuer-aid# issuee-aid#]
   (let [acdc-qvi* {:acdc/schema    :acdc-qvi
-                   :acdc/issuer    issuer-aid
-                   :acdc/attribute {:issuee issuee-aid
+                   :acdc/issuer    issuer-aid#
+                   :acdc/attribute {:issuee issuee-aid#
                                     :lei    "<LEI of QVI>"}}]
     (at/add-event! issuer-topic-path {:event/tx [:propose :issue acdc-qvi*]})))
 
-(defn propose-issue-acdc-le! [issuer-topic-path issuer-aid issuee-aid issuer-aid-attributed-acdc-qvi]
+(defn propose-issue-acdc-le! [issuer-topic-path issuer-aid# issuee-aid# issuer-aid-attributed-acdc-qvi]
   (let [acdc-le* {:acdc/schema     :acdc-le
-                  :acdc/issuer     issuer-aid
-                  :acdc/attribute  {:issuee issuee-aid
+                  :acdc/issuer     issuer-aid#
+                  :acdc/attribute  {:issuee issuee-aid#
                                     :lei    "<LEI of LE>"}
                   :acdc/edge-group {:qvi issuer-aid-attributed-acdc-qvi}}]
     (at/add-event! issuer-topic-path {:event/tx [:propose :issue acdc-le*]})))
-
 
 
 (deflda *topic-path->acdcs [as/*topic-path->db] (filter-map-vals :acdcs))
@@ -2043,22 +2040,22 @@
                                                :feed-item/creator    creator
                                                :feed-item/from-event event})))))
 
-(declare *aid->aid-name)
+(declare *aid#->aid-name)
 (at/reg-subjective-tx-handler!
  :attribute-acdc
  (fn [db event [_ acdc]]
-   (let [schema     (-> acdc :acdc/schema)
-         issuer-aid (-> acdc :acdc/issuer)
-         issuee-aid (-> acdc :acdc/attribute :issuee)]
+   (let [schema      (-> acdc :acdc/schema)
+         issuer-aid# (-> acdc :acdc/issuer)
+         issuee-aid# (-> acdc :acdc/attribute :issuee)]
      (-> db
          (update :attributed-acdcs conjs acdc)
          ;; (update-in [:member-aid->ke (ke->ke-icp ke)] max-ke ke)
          (cond->
-           (= :acdc-join-invite schema)
+             (= :acdc-join-invite schema)
            (update :feed (fn [feed]
                            (let [proposal [:propose :issue {:acdc/schema    :acdc-join-invite-accepted
-                                                            :acdc/issuer    issuee-aid #_ (-> db :received-ke ke->ke-icp)
-                                                            :acdc/attribute {:issuee      issuer-aid
+                                                            :acdc/issuer    issuee-aid#
+                                                            :acdc/attribute {:issuee      issuer-aid#
                                                                              :join-invite acdc
                                                                              :purpose     :join-invite-accepted}}]]
                              (cond-> feed
@@ -2070,20 +2067,23 @@
                                    (assoc-in [:feed/proposal->feed-item-idx proposal] (-> feed :feed/items count)))))))
            (= :acdc-join-invite-accepted schema)
            (update-in [:feed :feed/items] conjv {:feed-item/kind       :text-message
-                                                 :feed-item/text       (str (get @*aid->aid-name issuer-aid) " accepted join invite")
+                                                 :feed-item/text       (str (get @*aid#->aid-name issuer-aid#) " accepted join invite")
                                                  :feed-item/creator    :info-bot
                                                  :feed-item/from-event event}))))))
 
-(hg/reg-tx-handler! :attribute-acdc
-    (fn [{:keys [member-aids] :as db} _ [_ {:acdc/keys [schema issuer] :as acdc}]]
-      (-> db
-          (update :attributed-acdcs conjs acdc)
-          (cond->
-              (and (= :acdc-join-invite-accepted schema)
-                   (not (contains? (set member-aids) issuer)))
-            (update :member-aids conjv issuer)))))
 
-(declare *connected-aids->contact-topic-path)
+
+(hg/reg-tx-handler! :attribute-acdc
+    (fn [{:keys [aids#-log member-aids$] :as db} _ [_ {issuer-aid# :acdc/issuer :acdc/keys [schema] :as acdc}]]
+      (let [[new-aids#-log issuer-aid$] (indexed aids#-log issuer-aid#)]
+        (-> db
+            (update :attributed-acdcs conjs acdc)
+            (assoc :aids#-log new-aids#-log)
+            (cond->
+              (= :acdc-join-invite-accepted schema)
+              (update :member-aids$ vec-union [issuer-aid$]))))))
+
+(declare *connected-aids#->contact-topic-path)
 (add-watch *topic-path->acdcs ::disclose-novel-acdc-to-issuee-aid
            (fn [_ _ old-topic-path->acdcs new-topic-path->acdcs]
              (l [::disclose-novel-acdc-to-issuee-aid old-topic-path->acdcs new-topic-path->acdcs])
@@ -2093,15 +2093,15 @@
                                                  (filter (comp not-empty second)))]
                (doseq [[topic-path novel-acdcs] topic-path+novel-acdcs
                        novel-acdc               novel-acdcs]
-                 (when-let* [issuer-aid               (l (-> novel-acdc :acdc/issuer))
-                             issuee-aid               (l (-> novel-acdc :acdc/attribute :issuee))
-                             issuer+issuee-topic-path (l (get @*connected-aids->contact-topic-path #{issuer-aid issuee-aid}))]
+                 (when-let* [issuer-aid#              (l (-> novel-acdc :acdc/issuer))
+                             issuee-aid#              (l (-> novel-acdc :acdc/attribute :issuee))
+                             issuer+issuee-topic-path (l (get @*connected-aids#->contact-topic-path #{issuer-aid# issuee-aid#}))]
                    (let [disclosed-acdcs (get @*topic-path->disclosed-acdcs issuer+issuee-topic-path)]
                      (when (not (contains? disclosed-acdcs novel-acdc))
                        (at/add-event! issuer+issuee-topic-path {hg/tx [:disclose-acdc novel-acdc]}))))))))
 
 
-(declare *aid->latest-known-ke)
+(declare *aid#->latest-known-ke)
 (add-watch *topic-path->disclosed-acdcs ::attribute-novel-disclosed-acdcs-to-issuee-aid
            (fn [_ _ old-topic-path->disclosed-acdcs new-topic-path->disclosed-acdcs]
              (l [::attribute-novel-disclosed-acdcs-to-issuee-aid old-topic-path->disclosed-acdcs new-topic-path->disclosed-acdcs])
@@ -2112,30 +2112,25 @@
                (doseq [[topic-path novel-disclosed-acdcs] topic-path+novel-disclosed-acdcs
                        novel-disclosed-acdc               novel-disclosed-acdcs]
                  (letl2 [participant-topic-path (vec (butlast topic-path))
-                         participant-aid        (get @*topic-path->my-aid participant-topic-path)
-                         issuer-aid             (-> novel-disclosed-acdc :acdc/issuer)
-                         issuee-aid             (-> novel-disclosed-acdc :acdc/attribute :issuee)]
-                   (when (hash= participant-aid issuee-aid)
+                         participant-aid#       (get @*topic-path->my-aid# participant-topic-path)
+                         issuer-aid#            (-> novel-disclosed-acdc :acdc/issuer)
+                         issuee-aid#            (-> novel-disclosed-acdc :acdc/attribute :issuee)]
+                   (when (= participant-aid# issuee-aid#)
                      (letl2 [issuee-topic-path       participant-topic-path
                              issuee-attributed-acdcs (get @*topic-path->attributed-acdcs issuee-topic-path)]
                        (when (not (contains? issuee-attributed-acdcs novel-disclosed-acdc))
                          ;; member will be added
                          (at/add-event! issuee-topic-path {hg/tx [:attribute-acdc novel-disclosed-acdc]})
+
                          ;; control will be propagated
-                         (when-let* [issuer-ke (get @*aid->latest-known-ke issuer-aid)]
-                           (let [?issuee-known-issuer-ke (get-in @at/*topic-path->projected-db [issuee-topic-path :member-aid->ke issuer-aid])]
+                         (when-let* [issuer-ke (get @*aid#->latest-known-ke issuer-aid#)]
+                           (let [{:keys [aids#-log aid$->ke]} (get @at/*topic-path->projected-db issuee-topic-path)
+                                 ?issuee-known-issuer-ke             (some-> (not-neg (-indexOf aids#-log issuer-aid#))
+                                                                             aid$->ke)]
                              (when (> (?ke->index issuer-ke) (?ke->index ?issuee-known-issuer-ke))
-                               ;; we can't use :graft-ke reliably at this point, as we have joinee only in projected-db
-                               ;; and non-joinees are not in :member-aids-log at all
-                               ;; we could pull all contact-aids there and once they've been received - graft their key-events
-
-                               ;; as alternative, :member-aid->ke => :member-aid-hash->ke, and send ke-graft+aid-hash, as in hg grafting
-                               ;; Cons: bigger paylad
-                               ;;   Solution: make ke-graft support both idx and aid-hash
-                               ;; Pro: cleaner db, more idiomatic with hg grafts, no need for :inform-novel-ke
-                               (at/add-event! issuee-topic-path {hg/tx [:inform-novel-ke issuer-ke]}))))))))))))
-
-
+                               (let [{:keys [aids#-log]} (get @as/*topic-path->db issuee-topic-path)
+                                     ke-graft            (aids#-log+?ke-stem+ke-tip->ke-graft aids#-log ?issuee-known-issuer-ke issuer-ke)]
+                                 (at/add-event! issuee-topic-path {:event/tx [:graft-ke ke-graft]})))))))))))))
 
 
 (defn* ^:memoizing ?ke->index [ke]
@@ -2149,28 +2144,26 @@
     ?ke2))
 
 ;; that's gonna be slooow to recalc it from scratch every bloody time somebody informs or grafts
-(deflda *projected-member-aid->ke [at/*topic-path->projected-member-aid->ke]
-  (fn [topic-path->projected-member-aid->ke]
-    (->> topic-path->projected-member-aid->ke
+(deflda *projected-aid#->ke [at/*topic-path->projected-aid#->ke]
+  (fn [topic-path->projected-aid#->ke]
+    (->> topic-path->projected-aid#->ke
          vals
          (apply merge-with max-ke))))
 
-(deflda *aid->latest-known-ke [*projected-member-aid->ke *my-aid->my-ke] merge)
-
-(deflda *aid->latest-known-init-key->signing-key [*aid->latest-known-ke]
+(deflda *aid#->latest-known-ke [*projected-aid#->ke *my-aid#->my-ke] merge)
+(l @*aid#->latest-known-ke)
+(deflda *aid#->latest-known-init-key->signing-key [*aid#->latest-known-ke]
   (map-vals (fn [ke] (-> ke ke->pub-db db->init-key->signing-key))))
 
-(deflda *aid->latest-known-init-key->did-peer [*aid->latest-known-ke]
+(deflda *aid#->latest-known-init-key->did-peer [*aid#->latest-known-ke]
   (filter-map-vals (fn [ke] (-> ke ke->pub-db :init-key->did-peer))))
 
 
-(deflda *aid->aid-name [*aid->latest-known-ke] (map-vals ke->?aid-name))
-
-(set! hga-state/*aid->aid-name *aid->aid-name)
+(deflda *aid#->aid-name [*aid#->latest-known-ke] (map-vals ke->?aid-name))
 
 
 (defn ke->group-aid? [ke]
   (-> ke ->latest-establishment-key-event :key-event/signing-keys count (> 1)))
 
-(deflda *aid->group-aid? [*aid->latest-known-ke] (map-vals ke->group-aid?))
+(deflda *aid#->group-aid? [*aid#->latest-known-ke] (map-vals ke->group-aid?))
 ;; -------------

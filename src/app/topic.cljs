@@ -3,7 +3,7 @@
    [hashgraph.main :as hg]
    [hashgraph.topic :as hgt]
    [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda]]
-   [hashgraph.utils.core :refer [hash= map-vals median not-neg] :refer-macros [defn* l letl letl2] :as utils]
+   [hashgraph.utils.core :refer [hash= map-vals map-keys median not-neg] :refer-macros [defn* l letl letl2] :as utils]
 
    [app.state :as as]
    [app.control :as actrl]
@@ -182,4 +182,6 @@
 
 (deflda *topic-path->projected-cr [as/*topic-path->tip-taped] (map-vals event->projected-cr))
 (deflda *topic-path->projected-db [*topic-path->projected-cr] (map-vals hg/cr->db))
-(deflda *topic-path->projected-member-aid->ke [*topic-path->projected-db] (map-vals :member-aid->ke))
+(deflda *topic-path->projected-aid#->ke [*topic-path->projected-db]
+  (map-vals (fn [{:keys [aids#-log aid$->ke]}]
+              (->> aid$->ke (map-keys aids#-log)))))

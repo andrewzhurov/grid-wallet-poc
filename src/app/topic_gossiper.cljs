@@ -38,10 +38,6 @@
       (letl2 [topic          (last topic-path)
               cr             (-> new-tip-taped hg/->concluded-round)
               db             (-> cr hg/cr->db)
-              ?member-aid->ke (-> db :member-aid->ke)
-              projected-db    (-> new-tip-taped at/event->projected-db)
-              ?projected-member-aid->ke (-> projected-db :member-aid->ke)
-              ?projected-ke  (-> projected-db :ke)
               creator->unique-tip   (-> new-tip-taped hg/event->creator->unique-tip)
               creator->tip-tx-event (-> new-tip-taped hg/event->creator->tip-tx-event)
               tip-tx-event          (-> my-creator creator->tip-tx-event)
@@ -83,12 +79,12 @@
                                                                                (take-while (fn [some-cr]
                                                                                              (when-letl* [prev-some-cr              (-> some-cr :concluded-round/prev-concluded-round)
                                                                                                           some-cr-witness-concluded (-> some-cr :concluded-round/witness-concluded)]
-                                                                                               (or (when-letl* [some-cr-other-creator-unique-tip (-> some-cr-witness-concluded
-                                                                                                                                                     hg/event->creator->unique-tip
-                                                                                                                                                     (get other-creator))]
-                                                                                                     (not= (l (hg/->round-number some-cr-witness-concluded prev-some-cr))
-                                                                                                           (l (hg/->round-number some-cr-other-creator-unique-tip prev-some-cr))))
-                                                                                                   (not (l (hg/ancestor? some-cr-witness-concluded other-creator-unique-tip))))))))
+                                                                                               (and (when-letl* [some-cr-other-creator-unique-tip (-> some-cr-witness-concluded
+                                                                                                                                                      hg/event->creator->unique-tip
+                                                                                                                                                      (get other-creator))]
+                                                                                                      (not= (l (hg/->round-number some-cr-witness-concluded prev-some-cr))
+                                                                                                            (l (hg/->round-number some-cr-other-creator-unique-tip prev-some-cr))))
+                                                                                                    (not (l (hg/ancestor? other-creator-unique-tip some-cr-witness-concluded))))))))
                                        other-creator-not-known-useful-cr? (->> other-creator-not-known-crs
                                                                                (some (fn [not-known-cr]
                                                                                        (->> not-known-cr
@@ -100,16 +96,7 @@
                           (letl2 [needs-ack? (not (hash= tip-tx-event (get-in @*topic-path->creator->latest-acked-tip-tx-event [topic-path other-creator])))]
                             needs-ack?)
                           (conj :send-reason/needs-ack))))]
-            (letl2 [g$ (hgt/topic-hash+grafter-tip+graftee->g$ (hash (last topic-path)) new-tip-taped other-creator)
-                    #_#_creator-needs?
-                    (or (nil? (g$ hgt/g$-stem)) ;; we haven't heard creator ack topic
-                        (-> g$
-                            (get hgt/g$-c$->ss$)
-                            (->> (some (fn [[_c$ ss$]]
-                                         (->> ss$ (some (fn [s$]
-                                                          (get s$ hgt/s$-tx)))))))
-                            some?))
-                    ]
+            (letl2 [g$ (hgt/topic-hash+grafter-tip+graftee->g$ (hash (last topic-path)) new-tip-taped other-creator)]
               (swap! *topic-path->creator->latest-acked-tip-tx-event assoc-in [topic-path other-creator] tip-tx-event)
               (swap! *topic-path->creator->latest-sent-tip assoc-in [topic-path other-creator] (vary-meta new-tip-taped assoc :send-reasons send-reasons))
               (reset! *sent? true)

@@ -13,7 +13,7 @@
             [hashgraph.app.inspector :as hga-inspector]
             [hashgraph.app.tutorial :refer-macros [i]]
             [hashgraph.utils.core :refer-macros [defn* l letl letl2 when-let*] :refer [hash= merge-attr-maps conjv conjs] :as utils]
-            [hashgraph.app.icons :as icons]
+            [hashgraph.app.icons :as hga-icons]
 
             [app.styles :refer [reg-styles! shadow0 shadow1 shadow2 shadow3] :as styles]
             [app.state :as as]
@@ -21,7 +21,6 @@
             [app.topic-viz :as atv]
             [app.creds :as ac]
             [app.creds-viz :as acv]
-            [app.utils :refer-macros [incm]]
             [app.aid :as aa]
 
             [clojure.pprint]
@@ -34,7 +33,7 @@
             [garden.arithmetic :as ga]
             [garden.compiler]
             [app.control :as actrl]
-            [hashgraph.app.icons :as hga-icons]))
+            ))
 
 (def message-padding (px 12))
 (def color-primary (gc/rgb [51 144 236]))
@@ -275,10 +274,7 @@
 (defc message-view < rum/reactive
   [my-aid-topic-path topic-path {:feed-item/keys [kind data proposal text creator idx reactions from-event] :as feed-item}]
   (let [my-member-init-key (actrl/topic-path->member-init-key topic-path)
-        my-aid             (rum/react (rum/cursor ac/*topic-path->my-aid my-aid-topic-path))
-        my-creator         (-indexOf (rum/react (rum/cursor as/*topic-path->member-init-keys-log topic-path)) my-member-init-key)
-        ;; subj-db            (rum/react (rum/cursor at/*topic-path->subjective-db topic-path))
-        ]
+        my-creator         (-indexOf (rum/react (rum/cursor as/*topic-path->member-init-keys-log topic-path)) my-member-init-key)]
     (case kind
       :text-message
       [:div.message (merge-attr-maps (hga-inspector/inspectable from-event)
@@ -303,10 +299,10 @@
 
       :proposal
       (let [[_ kind {:acdc/keys [schema] :as acdc}] proposal
-            issuer-aid                              (-> acdc :acdc/issuer)
-            issuee-aid                              (-> acdc :acdc/attribute :issuee)
-            issuer-name                             (rum/react (rum/cursor ac/*aid->aid-name issuer-aid))
-            issuee-name                             (rum/react (rum/cursor ac/*aid->aid-name issuee-aid))]
+            issuer-aid#                             (-> acdc :acdc/issuer)
+            issuee-aid#                             (-> acdc :acdc/attribute :issuee)
+            issuer-name                             (rum/react (rum/cursor ac/*aid#->aid-name issuer-aid#))
+            issuee-name                             (rum/react (rum/cursor ac/*aid#->aid-name issuee-aid#))]
         [:div.message {:key   idx
                        :class [(when (keyword? creator) (str "creator-" (name creator)))
                                (when (= creator my-creator) "from-me")]}
@@ -337,7 +333,7 @@
                                                       (cond-> {:class    [(when i-reacted? "i-reacted")]
                                                                :key      (str reaction-kind)}
                                                         (not i-reacted?) (assoc :on-click #(on-react))))
-               (icons/icon :regular :circle-check :color "white" :size "sm")
+               (hga-icons/icon :regular :circle-check :color "white" :size "sm")
                (when (>= (count reactors) 1)
                  [:span.message-reaction-count (count reactors)])])])])
 
@@ -376,12 +372,7 @@
   (and (= (.-key dom-event) "Enter")
        (.-ctrlKey dom-event)))
 
-(defc my-aid-actions < rum/reactive
-  [topic]
-  [:<>
-   [:button.action {:on-click #(ac/rotate-key! topic)}
-    "Rotate pre-rotated key"]])
-
+#_
 (defc issuee-actions < rum/reactive
   [topic]
   (when-let* [issuer-aid-topic               (l (rum/react as/*selected-my-aid-topic))
@@ -404,6 +395,7 @@
        [:button.action {:on-click #(ac/issue-acdc-le! issuer-aid-topic issuer-aid issuee-aid issuer-aid-attributed-acdc-qvi)}
         "Issue LE"])]))
 
+#_
 (defcs promote-to-id-form-dialog < (rum/local "" ::*id-name)
   [{::keys [*opened? *id-name]} topic open? on-close]
   (dialog {:open        open?
@@ -432,18 +424,18 @@
 
 (defcs propose-join-invite-dialog < rum/reactive
   [{::keys [*opened? *id-name]} topic-path open? on-close]
-  (let [my-aid      (rum/react (rum/cursor ac/*topic-path->my-aid topic-path))
-        my-aid-name (rum/react (rum/cursor ac/*aid->aid-name my-aid))]
+  (let [my-aid#     (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
+        my-aid-name (rum/react (rum/cursor ac/*aid#->aid-name my-aid#))]
     (dialog {:open     open?
              :on-close on-close}
             (dialog-title "Propose Join Invite")
             (dialog-content
               [:div {:style {:margin-bottom "10px"}} my-aid-name "'s contacts:"]
               [:div {:style {:display :flex}}
-               (when-let* [contact-aids (rum/react (rum/cursor ac/*topic-path->contact-aids topic-path))]
-                 (for [contact-aid contact-aids]
-                   (aa/aid-view contact-aid {:on-click #(do (on-close)
-                                                            (ac/propose-issue-acdc-join-invite! topic-path my-aid contact-aid))})))]))))
+               (when-let* [contact-aids# (rum/react (rum/cursor ac/*topic-path->contact-aids# topic-path))]
+                 (for [contact-aid# contact-aids#]
+                   (aa/aid#-view contact-aid# {:on-click #(do (on-close)
+                                                              (ac/propose-issue-acdc-join-invite! topic-path my-aid# contact-aid#))})))]))))
 
 (defn add-text-message-event! [text-message]
   (at/add-event! {hg/tx [:text-message {:text-message/content text-message}]}))
@@ -499,12 +491,12 @@
                                                  :open       @*actions-shown?}
                                                 (when init-control-initiated?
                                                   (speed-dial-action {:key           :rotate
-                                                                      :icon          (icons/icon :solid :key)
+                                                                      :icon          (hga-icons/icon :solid :key)
                                                                       :tooltip-title "Rotate key"
                                                                       :tooltip-open  true
                                                                       :on-click      #(ac/add-rotate-control-event! topic-path)}))
                                                 (when (and (> (count my-aid-topic-path) 1)
-                                                           (not-empty (rum/react (rum/cursor ac/*topic-path->contact-aids topic-path))))
+                                                           (not-empty (rum/react (rum/cursor ac/*topic-path->contact-aids# topic-path))))
                                                   (speed-dial-action {:key           "join invite"
                                                                       :icon          (icon-fingerprint)
                                                                       :tooltip-title "Propose Join Invite"

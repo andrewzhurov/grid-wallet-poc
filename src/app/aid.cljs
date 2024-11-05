@@ -260,10 +260,10 @@
 
 (reg-styles! :aid-styles aid-styles)
 
-(defc aid-view < rum/reactive
-  {:key-fn (fn [aid] (hash aid))}
-  [aid props]
-  (let [aid-name (rum/react (rum/cursor ac/*aid->aid-name aid))]
+(defc aid#-view < rum/reactive
+  {:key-fn (fn [aid#] aid#)}
+  [aid# props]
+  (let [aid-name (rum/react (rum/cursor ac/*aid#->aid-name aid#))]
     [:div.aid props
      [:div.aid-name
       aid-name]]))

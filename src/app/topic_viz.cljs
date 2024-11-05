@@ -65,7 +65,7 @@
 
 (deflda *topic-path->viz-cr [*topic-path->viz-tip-taped] (map-vals hg/->concluded-round))
 (deflda *topic-path->viz-cr-est [*topic-path->viz-cr] (map-vals ac/cr->cr-est))
-(deflda *topic-path->viz-active-creators# [*topic-path->viz-cr-est] (map-vals :active-creators))
+(deflda *topic-path->viz-active-creators# [*topic-path->viz-cr-est] (map-vals (comp :active-creators :concluded-round/db)))
 
 (deflda *topic-path->viz-projected-cr [*topic-path->viz-tip-taped] (map-vals at/event->projected-cr))
 (deflda *topic-path->viz-nr-creators# [*topic-path->viz-projected-cr] (map-vals (fn [projected-cr] (-> projected-cr :concluded-round/es-r ;; note: this is a projected cr, es-r are those not received in the actual cr this one is atop

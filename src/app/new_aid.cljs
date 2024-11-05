@@ -13,7 +13,7 @@
                    :reload-all)
   (:require [hashgraph.main :as hg]
             [hashgraph.topic :as hgt]
-            [hashgraph.utils.core :refer-macros [defn* l letl when-let*] :refer [conjv conjs] :as utils]
+            [hashgraph.utils.core :refer-macros [defn* l letl letl2 when-let*] :refer [conjv conjs] :as utils]
             [hashgraph.app.icons :as icons]
 
             [app.styles :refer [reg-styles! shadow0 shadow1 shadow2 shadow3] :as styles]
@@ -28,11 +28,9 @@
             [garden.selectors :as gs]
             [garden.color :as gc]
             [garden.util :as gu]
-            [garden.util]
             [garden.units :refer [px px- px+] :as gun]
             [garden.arithmetic :as ga]
-            [garden.compiler]
-            ["@mui/lab/TabPanel$default" :as tab-panel]))
+            [garden.compiler]))
 
 (def new-aid-styles
   [[:.new-aid {:max-width (px 400)
@@ -153,33 +151,21 @@
                                                                                           :member-init-keys-log [device-init-key]
                                                                                           :threshold            [[1 1]]
                                                                                           :total-stake          hg/total-stake ;; ideally this is not needed for one-member hg
-                                                                                          :stake-map            {device-init-key hg/total-stake}}]
+                                                                                          :stake-map            {0 hg/total-stake}}]
                                                                      #_(reset! as/*selected-topic-path [device-topic])
                                                                      #_(reset! as/*browsing {:page :topic})
                                                                      (at/add-event! [device-topic] {hg/topic device-topic})
                                                                      (ac/add-init-control-event! [device-topic])
                                                                      #_(ac/add-event! [device-topic] {:event/tx [:assoc-did-peer my-did-peer]})
 
-                                                                     (let [device-aid     (or (get @ac/*topic-path->my-aid [device-topic]) (throw (ex-info "device aid is not present" {:device-topic-cr (get @as/*topic-path->cr [device-topic])})))
-                                                                           personal-topic (ac/create-aided-topic! [device-topic] {:topic-name     @*aid-name
-                                                                                                                                  :member-aids    [device-aid]
-                                                                                                                                  :member-aid->ke (->> [device-aid]
-                                                                                                                                                       (into (hash-map) (map (fn [member-aid] [member-aid (-> member-aid (@ac/*aid->latest-known-ke))]))))})]
+                                                                     (letl2 [device-aid#    (or (get @ac/*topic-path->my-aid# [device-topic]) (throw (ex-info "device aid is not present" {:device-topic-cr (get @as/*topic-path->cr [device-topic])})))
+                                                                             personal-topic (ac/create-aided-topic! [device-topic] {:topic-name   @*aid-name
+                                                                                                                                    :aids#-log    [device-aid#]
+                                                                                                                                    :aid$->ke     (hash-map 0 (@ac/*aid#->latest-known-ke device-aid#))
+                                                                                                                                    :member-aids$ [0]})]
                                                                        (ac/add-init-control-event! [device-topic personal-topic])
                                                                        (reset! as/*selected-topic-path [device-topic personal-topic])
                                                                        (reset! as/*browsing {:page :topic})))
                                                                    #_(let [topic (at/create-topic! my-did-peer #{my-did-peer} {:topic-name @*device-name})]
                                                                        (ac/add-init-control-event! topic)))}
-                                                      "Create Personal grID")))]))])])]
-  #_[:div {:style {:height          "100vh"
-                   :width           "100vw"
-                   :display         :flex
-                   :flex-direction  :column
-                   :justify-content :center
-                   :align-items     :center}}
-     [:div {:style {:display         :flex
-                    :flex-direction  :column
-                    :justify-content :center
-                    :align-items     :center
-                    :max-width       "400px"}}
-    ]])
+                                                      "Create Personal grID")))]))])])])
