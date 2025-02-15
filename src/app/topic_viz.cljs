@@ -68,6 +68,7 @@
 (deflda *topic-path->viz-active-creators# [*topic-path->viz-cr-est] (map-vals (comp :active-creators :concluded-round/db)))
 
 (deflda *topic-path->viz-projected-cr [*topic-path->viz-tip-taped] (map-vals at/event->projected-cr))
+(deflda *topic-path->viz-projected-cr-est [*topic-path->viz-projected-cr] (map-vals ac/cr->cr-est))
 (deflda *topic-path->viz-nr-creators# [*topic-path->viz-projected-cr] (map-vals (fn [projected-cr] (-> projected-cr :concluded-round/es-r ;; note: this is a projected cr, es-r are those not received in the actual cr this one is atop
                                                                                                        (->> (into #{} (map hg/creator)))))))
 (deflda *topic-path->viz-pending-creators# [*topic-path->viz-active-creators# *topic-path->viz-nr-creators#]
@@ -76,13 +77,21 @@
          (into (hash-map) (map (fn [[topic-path viz-nr-creators#]]
                                  [topic-path (set/difference viz-nr-creators# (-> topic-path topic-path->viz-active-creators#))]))))))
 
-(deflda *topic-path->viz-member-aid-info [*topic-path->viz-cr-est *topic-path->viz-pending-creators#]
-  (fn [topic-path->viz-cr-est topic-path->viz-pending-creators#]
-    (->> topic-path->viz-cr-est
-         (into (hash-map) (map (fn [[topic-path viz-cr-est]]
-                                 (let [member-init-keys-log     (-> viz-cr-est hg/cr->db :member-init-keys-log)
+(deflda *topic-path->viz-member-aid-info [*topic-path->viz-projected-cr-est *topic-path->viz-pending-creators#]
+  (fn [topic-path->viz-projected-cr-est topic-path->viz-pending-creators#]
+    (->> topic-path->viz-projected-cr-est
+         (into (hash-map) (map (fn [[topic-path viz-projected-cr-est]]
+                                 (let [member-init-keys-log     (-> viz-projected-cr-est hg/cr->db :member-init-keys-log)
                                        pending-member-init-keys (->> topic-path topic-path->viz-pending-creators# (map (fn [viz-pending-creator] (nth member-init-keys-log viz-pending-creator))))]
-                                   [topic-path (ac/cr-est+pending-member-init-keys#->member-aid-info viz-cr-est pending-member-init-keys)])))))))
+                                   [topic-path (ac/cr-est+pending-member-init-keys#->member-aid-info viz-projected-cr-est pending-member-init-keys)])))))))
+
+(rum/derived-atom [*topic-path->viz-member-aid-info] ::derive-*topic-path->creator->color
+  (map-vals (fn [{:member-aid-info/keys [creator->member-aid-info]}]
+              (->> creator->member-aid-info
+                   (map-vals :member-aid-info/color))))
+  {:ref hga-page/*topic-path->creator->color})
+
+
 
 #_
 (def *topic-path->creator->viz-x
@@ -131,118 +140,124 @@
                  (hga-transitions/re-position! topic-path old-x->new-x)))))
 
 
+(defn topic-path-sync-tip-playback-with-viz-scroll! [topic-path old-viz-scroll new-viz-scroll]
+  (l [::sync-playback old-viz-scroll new-viz-scroll])
+  (let [tip-taped                (@as/*topic-path->tip-taped topic-path)
+        tips-taped               (-> tip-taped tip-taped->tips-taped)
+        delta                    (- new-viz-scroll old-viz-scroll)
+        play-forward?            (pos? delta)
+        tips-taped-last-idx      (or (not-neg (dec (count tips-taped)))
+                                     0)
+        {:keys [tips-behind>
+                tips-played<
+                tips-rewinded<]} (@*topic-path->tip-playback topic-path)]
+    (if play-forward?
+      ;; TODO switch to split-with* (?)
+      (let [[tips-unrewinded< new-tips-rewinded<] (->> tips-rewinded< (split-with #(not (hga-view/->after-viz-playback-viewbox? (hga-view/evt->y %) new-viz-scroll))))
+            last-tip-unrewinded-idx               (-indexOf tips-taped (->> tips-unrewinded< reverse first))
+            last-tip-played-idx                   (-indexOf tips-taped (->> tips-played< reverse first))
+            ahead-tip-idx                         (or (some-> last-tip-unrewinded-idx not-neg inc)
+                                                      (some-> last-tip-played-idx not-neg inc)
+                                                      0)
+            tips-just-played<                     (cond-> tips-unrewinded<
+                                                    (and (or (empty? tips-rewinded<)
+                                                             (empty? new-tips-rewinded<))
+                                                         (<= ahead-tip-idx tips-taped-last-idx))
+                                                    (concat (->> (subvec tips-taped ahead-tip-idx)
+                                                                 l
+                                                                 (take-while #(not (hga-view/->after-viz-playback-viewbox? (l (hga-view/evt->y %)) new-viz-scroll))))))
+
+            new-tips-played<*                  (concat tips-played< tips-just-played<)
+            [tips-to-behind< new-tips-played<] (->> new-tips-played<* (split-with #(hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll)))
+            new-tips-behind>                   (into tips-behind> tips-to-behind<)
+
+            just-played< (->> tips-just-played<
+                              (mapcat #(-> % meta :tip/novel-events))
+                              (sort-by hg/event->depth))
+
+            old-viz-cr         (get @*topic-path->viz-cr topic-path)
+            old-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
+        ;; first runs transitions, then will derive viz-cr, member-aid-info, creator->viz-x, running cr-transitions and re-position transitions
+        (when (or (not-empty just-played<)
+                  (not-empty tips-to-behind<))
+          (swap! *topic-path->tip-playback assoc topic-path {:tips-behind>   new-tips-behind>
+                                                             :tips-played<   new-tips-played<
+                                                             :tips-rewinded< new-tips-rewinded<}))
+
+        (let [new-viz-cr         (get @*topic-path->viz-cr topic-path)
+              new-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
+          (when (not (hash= old-creator->viz-x new-creator->viz-x))
+            (when-let [old-x->new-x (not-empty (reduce (fn [acc [creator new-x]]
+                                                         (let [?old-x (get old-creator->viz-x creator)]
+                                                           (cond-> acc
+                                                             (and ?old-x (not= ?old-x new-x))
+                                                             (assoc ?old-x new-x))))
+                                                       (hash-map)
+                                                       new-creator->viz-x))]
+              (hga-transitions/re-position! topic-path old-x->new-x)))
+
+          (when (not-empty just-played<)
+            (hga-transitions/play! topic-path new-creator->viz-x just-played<)
+            #_(reset! hga-state/*just-played< just-played<))
+
+          (when (not (hash= old-viz-cr new-viz-cr))
+            (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
+                  initial-cr        (get @as/*topic-path->initial-cr topic-path)]
+              (hga-transitions/weave-cr! topic-path initial-tip-taped initial-cr new-creator->viz-x old-viz-cr new-viz-cr)))))
+
+      (let [tips-played>                       (reverse tips-played<)
+            [tips-to-play> new-tips-behind>]   (->> tips-behind> (split-with #(not (hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll))))
+            new-tips-played>*                  (concat tips-played> tips-to-play>)
+            [tips-to-rewind> new-tips-played>] (->> new-tips-played>* (split-with #(hga-view/->after-viz-playback-viewbox? (hga-view/evt->y %) new-viz-scroll)))
+            new-tips-rewinded<                 (into tips-rewinded< tips-to-rewind>)
+            new-tips-played<                   (reverse new-tips-played>)
+            just-rewinded>                     (->> tips-to-rewind>
+                                                    (mapcat #(-> % meta :tip/novel-events))
+                                                    (sort-by hg/event->depth))
+            old-viz-cr                         (get @*topic-path->viz-cr topic-path)
+            old-creator->viz-x                 (get @*topic-path->creator->viz-x topic-path)]
+        (when (or (not-empty tips-to-play>)
+                  (not-empty tips-to-rewind>))
+          (swap! *topic-path->tip-playback assoc topic-path {:tips-behind>   new-tips-behind>
+                                                             :tips-played<   new-tips-played<
+                                                             :tips-rewinded< new-tips-rewinded<}))
+
+        (let [new-viz-cr         (get @*topic-path->viz-cr topic-path)
+              new-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
+          (when (not (hash= old-creator->viz-x new-creator->viz-x))
+            (when-let [old-x->new-x (not-empty (reduce (fn [acc [creator new-x]]
+                                                         (let [?old-x (get old-creator->viz-x creator)]
+                                                           (cond-> acc
+                                                             (and ?old-x (not= ?old-x new-x))
+                                                             (assoc ?old-x new-x))))
+                                                       (hash-map)
+                                                       new-creator->viz-x))]
+              (hga-transitions/re-position! topic-path old-x->new-x)))
+
+          (when (not (hash= old-viz-cr new-viz-cr))
+            (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
+                  initial-cr        (get @as/*topic-path->initial-cr topic-path)])
+            (hga-transitions/unweave-cr! topic-path new-creator->viz-x old-viz-cr new-viz-cr))
+
+          (when-not (empty? just-rewinded>)
+            (hga-transitions/rewind! topic-path just-rewinded>)))))))
+
 (defn reg-topic-path-sync-tip-playback-with-viz-scroll! [topic-path]
   (add-watch (unique-cursor *topic-path->viz-scroll topic-path) [::sync-playback topic-path]
              (fn [_ _ old-viz-scroll new-viz-scroll]
-               (l [::sync-playback old-viz-scroll new-viz-scroll])
-               (let [tip-taped                (@as/*topic-path->tip-taped topic-path)
-                     tips-taped               (-> tip-taped tip-taped->tips-taped)
-                     delta                    (- new-viz-scroll old-viz-scroll)
-                     play-forward?            (pos? delta)
-                     tips-taped-last-idx      (or (not-neg (dec (count tips-taped)))
-                                                  0)
-                     {:keys [tips-behind>
-                             tips-played<
-                             tips-rewinded<]} (@*topic-path->tip-playback topic-path)]
-                 (if play-forward?
-                   ;; TODO switch to split-with* (?)
-                   (let [[tips-unrewinded< new-tips-rewinded<] (->> tips-rewinded< (split-with #(not (hga-view/->after-viz-playback-viewbox? (hga-view/evt->y %) new-viz-scroll))))
-                         last-tip-unrewinded-idx               (-indexOf tips-taped (->> tips-unrewinded< reverse first))
-                         last-tip-played-idx                   (-indexOf tips-taped (->> tips-played< reverse first))
-                         ahead-tip-idx                         (or (some-> last-tip-unrewinded-idx not-neg inc)
-                                                                   (some-> last-tip-played-idx not-neg inc)
-                                                                   0)
-                         tips-just-played<                     (cond-> tips-unrewinded<
-                                                                 (and (or (empty? tips-rewinded<)
-                                                                          (empty? new-tips-rewinded<))
-                                                                      (<= ahead-tip-idx tips-taped-last-idx))
-                                                                 (concat (->> (subvec tips-taped ahead-tip-idx)
-                                                                              l
-                                                                              (take-while #(not (hga-view/->after-viz-playback-viewbox? (l (hga-view/evt->y %)) new-viz-scroll))))))
-
-                         new-tips-played<*                  (concat tips-played< tips-just-played<)
-                         [tips-to-behind< new-tips-played<] (->> new-tips-played<* (split-with #(hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll)))
-                         new-tips-behind>                   (into tips-behind> tips-to-behind<)
-
-                         just-played< (->> tips-just-played<
-                                           (mapcat #(-> % meta :tip/novel-events))
-                                           (sort-by hg/event->depth))
-
-                         old-viz-cr         (get @*topic-path->viz-cr topic-path)
-                         old-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
-                     ;; first runs transitions, then will derive viz-cr, member-aid-info, creator->viz-x, running cr-transitions and re-position transitions
-                     (when (or (not-empty just-played<)
-                               (not-empty tips-to-behind<))
-                       (swap! *topic-path->tip-playback assoc topic-path {:tips-behind>   new-tips-behind>
-                                                                          :tips-played<   new-tips-played<
-                                                                          :tips-rewinded< new-tips-rewinded<}))
-
-                     (let [new-viz-cr         (get @*topic-path->viz-cr topic-path)
-                           new-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
-                       (when (not (hash= old-creator->viz-x new-creator->viz-x))
-                         (when-let [old-x->new-x (not-empty (reduce (fn [acc [creator new-x]]
-                                                                      (let [?old-x (get old-creator->viz-x creator)]
-                                                                        (cond-> acc
-                                                                          (and ?old-x (not= ?old-x new-x))
-                                                                          (assoc ?old-x new-x))))
-                                                                    (hash-map)
-                                                                    new-creator->viz-x))]
-                           (hga-transitions/re-position! topic-path old-x->new-x)))
-
-                       (when (not-empty just-played<)
-                         (hga-transitions/play! topic-path new-creator->viz-x just-played<)
-                         #_(reset! hga-state/*just-played< just-played<))
-
-                       (when (not (hash= old-viz-cr new-viz-cr))
-                         (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
-                               initial-cr        (get @as/*topic-path->initial-cr topic-path)]
-                           (hga-transitions/weave-cr! topic-path initial-tip-taped initial-cr new-creator->viz-x old-viz-cr new-viz-cr)))))
-
-                   (let [tips-played>                       (reverse tips-played<)
-                         [tips-to-play> new-tips-behind>]   (->> tips-behind> (split-with #(not (hga-view/->before-viz-viewbox? (hga-view/evt->y %) new-viz-scroll))))
-                         new-tips-played>*                  (concat tips-played> tips-to-play>)
-                         [tips-to-rewind> new-tips-played>] (->> new-tips-played>* (split-with #(hga-view/->after-viz-playback-viewbox? (hga-view/evt->y %) new-viz-scroll)))
-                         new-tips-rewinded<                 (into tips-rewinded< tips-to-rewind>)
-                         new-tips-played<                   (reverse new-tips-played>)
-                         just-rewinded>                     (->> tips-to-rewind>
-                                                                 (mapcat #(-> % meta :tip/novel-events))
-                                                                 (sort-by hg/event->depth))
-                         old-viz-cr                         (get @*topic-path->viz-cr topic-path)
-                         old-creator->viz-x                 (get @*topic-path->creator->viz-x topic-path)]
-                     (when (or (not-empty tips-to-play>)
-                               (not-empty tips-to-rewind>))
-                       (swap! *topic-path->tip-playback assoc topic-path {:tips-behind>   new-tips-behind>
-                                                                          :tips-played<   new-tips-played<
-                                                                          :tips-rewinded< new-tips-rewinded<}))
-
-                     (let [new-viz-cr         (get @*topic-path->viz-cr topic-path)
-                           new-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
-                       (when (not (hash= old-creator->viz-x new-creator->viz-x))
-                         (when-let [old-x->new-x (not-empty (reduce (fn [acc [creator new-x]]
-                                                                      (let [?old-x (get old-creator->viz-x creator)]
-                                                                        (cond-> acc
-                                                                          (and ?old-x (not= ?old-x new-x))
-                                                                          (assoc ?old-x new-x))))
-                                                                    (hash-map)
-                                                                    new-creator->viz-x))]
-                           (hga-transitions/re-position! topic-path old-x->new-x)))
-
-                       (when (not (hash= old-viz-cr new-viz-cr))
-                         (let [initial-tip-taped (get @as/*topic-path->initial-tip-taped topic-path)
-                               initial-cr        (get @as/*topic-path->initial-cr topic-path)])
-                         (hga-transitions/unweave-cr! topic-path new-creator->viz-x old-viz-cr new-viz-cr))
-
-                       (when-not (empty? just-rewinded>)
-                         (hga-transitions/rewind! topic-path just-rewinded>)))))))))
-
-
+               (topic-path-sync-tip-playback-with-viz-scroll! topic-path old-viz-scroll new-viz-scroll))))
 
 (add-watch as/*topic-paths ::reg-sync-tips-playback-with-viz-scroll
            (fn [_ _ old-topic-paths new-topic-paths]
              (l [::reg-sync-tips-playback-with-viz-scroll old-topic-paths new-topic-paths])
              (let [novel-topic-paths (set/difference new-topic-paths old-topic-paths)]
                (doseq [novel-topic-path novel-topic-paths]
-                 (reg-topic-path-sync-tip-playback-with-viz-scroll! novel-topic-path)))))
+                 (reg-topic-path-sync-tip-playback-with-viz-scroll! novel-topic-path)
+                 ;; trigger manually for the first time, for those topics that are out-of-sight (in sight seem to scroll fine) (not pretty)
+                 (let [selected-topic-path @as/*selected-topic-path]
+                   (when (not (hash= novel-topic-path selected-topic-path))
+                     (when-let [viz-scroll (get @*topic-path->viz-scroll novel-topic-path)]
+                       (topic-path-sync-tip-playback-with-viz-scroll! novel-topic-path 0 viz-scroll))))))))
 
 #_
 (for [topic-path @as/*topic-paths]
