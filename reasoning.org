@@ -1,3 +1,70 @@
+#+STARTUP: indent
+* how to exchange assets grID<->grID?
+** anchor contract under grIDs
+*** some IPEX dance for this "contract"
+*** both anchor agreement
+Disclosing these two anchors can't be deemed as proof that contract is settled,
+as one party may not have disclosed it to the other (e.g., maliciously).
+To avoid that possibility, "settled" condition is when both party know of each other agreement.
+
+If acknowledgement is public - no way to cheat.
+Even if Alice tells ack to Bob and Bob does not tell back - she'll learn soon, by o observing his blockchain.
+
+If acknowledgment is private - possible to cheat, as Alice may disclose to Bob and Bob will not disclose to alice.
+So we need to eliminate the need of disclosure, otherwise the settlement condition cannot be satisfied.
+
+One way is to require acknowledgements to come with a blind, provided by the other party.
+This way a party knows hash of the ack it needs.
+
+Another way is to hash-link acknowledgement to other's agreement, without a blind.
+This way other party knows the ack hash as well.
+And it is still private to others as agreement itself is with a blind, and ack refs to it by hash.
+
+In both cases a party knows the exact content of the other's ack (and its hash).
+Second approach does the job with less comlexity and same privacy as the first's.
+
+Con: other party may stretch acceptance, issuing it when it benefits the most (e.g., in a year)
+
+**** contract may include block-time-threshold for settlement, if not seen in X blocks from contract - abort
+This forces others to ack if they don't want to block their IDs for a lengthy time, misbehaving.
+Still, another may indeed stop issuing new blocks.
+
+***** double-block-time-threshold
+This threshold applies to issuer's blockchain after he issued an ack.
+If he doesn't ack an ack in X blocks - contract is canceled.
+
+Still, other may misbehave by not doing so. He created ack, but not ack of an ack, freezing his ID for a time.
+Same end-result, he's in control of whether it'll be accepted or canceled.
+
+**** alternatively "no later than in 10 blocks after agreement there is an ack"
+Settlement condition: "see all see all acks"
+
+**** alternatively use settlement condition as "see everybody acks"
+So its 3 rounds.
+Acks
+See all acks
+See all see all acks
+If by the end of block-time at least one reached condition - its final.
+
+*** both anchor acks
+*** having learned two acks party can show it to others as proof
+** form a new jointly-controlled grID, anchor under it
+*** Pro: when stuff is anchored it's consensual, no need to synchronize blockchains
+*** Con: need to have disclosable proof that this grID represents relationship of member/"delegatee" grIDs
+**** still need to anchor data under personal grIDs? If that's where the assets are tracked.
+
+* login
+** TODO [#B] add mock QR code for demo
+** ways to login into Personal grID
+*** Personal grID: create Login QR code; Device grID: scan from Login/Signup page
+*** Personal grID: create Login Link;    Device grID: click on Login Link
+**** link is more prone to interception than QR code, needs human-verification of to-login device
+*** Personal grID: create Login Link;    Device grID: paste from Login/Signup page
+**** unnecessary for production, can be done by clicking the link
+***** this will either be interpreted by OS, feeding it to grID Wallet, or open up App Store page if it's not installed
+****** the case when Device-to-connect is a desktop can be not catered for, as it's unlikely to encounter
+**** fine for demo purposes
+
 * gossip
 ** Problem: spamming member with enormous grafts
 *** Solution: talk to him only when heard from him directly
@@ -10,6 +77,29 @@
 ******* torrent-like?
 **** won't work on loss of a message, p2p will be halted between the two
 ***** Solution: talk when see that sent tip is an ancestor of his event
+
+* consensus
+** Note: may not need BFT, only majority approval. I.e., F may be set to 0.
+*** TODO [#A] set F to 0 by default for less events on demo
+** TODO [#B] fix votes viz
+** DONE via stake
+** IDEA via threshold
+*** Pro: can make use of 2-member optimization.
+
+** TODO [#C] consensus stake and controlling stake
+*** TODO viz stake-type
+**** TODO controlling stake votes viz
+***** as filling vote circles on events
+*** TODO add stake-type-toggle
+
+
+* feed
+** TODO [#A] viz creds - Join Invite
+** TODO [#A] fix feed item order for newly joined guy (KE items)
+* creds
+
+* viz
+** TODO [#B] fix event colors
 
 * how to store forked events?
 ** ref to events directly, event as Map
@@ -156,13 +246,7 @@ So only controlling aids are leaked out, consensus aids are kept private to topi
 **** potential impl: id_f(node)
 ***** Problem: hg-specific and aid->ke specific lookup of that id
 
-* TODO consensus stake and controlling stake
-** TODO viz stake-type
-*** TODO controlling stake votes viz
-**** as filling vote circles on events
-** TODO add stake-type-toggle
-
-* TODO viz information toggles (rounds, witnesses, votes)
+* DONE viz information toggles (rounds, witnesses, votes)
 
 * how to color events given we color member aids?
 ** gotcha: creator = pub key
