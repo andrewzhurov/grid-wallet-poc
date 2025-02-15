@@ -2151,7 +2151,7 @@
          (apply merge-with max-ke))))
 
 (deflda *aid#->latest-known-ke [*projected-aid#->ke *my-aid#->my-ke] merge)
-(l @*aid#->latest-known-ke)
+
 (deflda *aid#->latest-known-init-key->signing-key [*aid#->latest-known-ke]
   (map-vals (fn [ke] (-> ke ke->pub-db db->init-key->signing-key))))
 

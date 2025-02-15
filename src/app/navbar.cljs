@@ -53,7 +53,7 @@
   [:div#navbar
    [:div.navbar__my-aid-topic-paths
     [:div.navbar__my-aid-topic-paths__selected
-     (for [selected-my-aid-topic-path (l (subvecs (l selected-my-aid-topic-path)))]
+     (for [selected-my-aid-topic-path (subvecs selected-my-aid-topic-path)]
        (contacts/my-aid-topic-path-view selected-my-aid-topic-path true))]
     [:div.navbar__my-aid-topic-paths__selectable
      (for [selectable-my-aid-topic-path (rum/react (rum/cursor ac/*topic-path->my-aid-topic-paths selected-my-aid-topic-path))]
