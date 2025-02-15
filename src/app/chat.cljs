@@ -22,7 +22,9 @@
             [app.creds :as ac]
             [app.creds-viz :as acv]
             [app.aid :as aa]
+            [app.control :as actrl]
 
+            [clojure.walk]
             [clojure.pprint]
             [rum.core :refer [defc defcs] :as rum]
             [garden.selectors :as gs]
@@ -32,7 +34,6 @@
             [garden.units :refer [px px- px+] :as gun]
             [garden.arithmetic :as ga]
             [garden.compiler]
-            [app.control :as actrl]
             ))
 
 (def message-padding (px 12))
@@ -271,6 +272,39 @@
 
 ;; (-> @as/*selected-topic (@as/*topic->tip-taped) hg/->concluded-round js/console.log)
 
+(defn ke->ke-name [ke]
+  (case (-> ke :key-event/type)
+    :inception   "Inception"
+    :rotation    "Rotation"
+    :interaction "Interaction"))
+
+(defn threshold->threshold-view [threshold]
+  (with-out-str (clojure.pprint/pprint  (clojure.walk/postwalk (fn [form] (cond (= form [[1 1]]) "1"
+                                                                                (map? form)      (->> form
+                                                                                                      (mapcat (fn [[weight clause]] [(str (first weight) "/" (second weight)) clause]))
+                                                                                                      (apply array-map))
+                                                                                :else            form))
+                                                               threshold))))
+
+(defcs message-ke-view < rum/reactive (rum/local false :*opened?)
+  [{:keys [*opened?]} feed-item]
+  (let [{:feed-item/keys [ke concluded-by-event concluded-by-event]} feed-item]
+    (js/console.log feed-item)
+    [:div.message.creator-aid-bot (hga-inspector/inspectable concluded-by-event)
+     [:div.message-content {:on-click #(swap! *opened? not)}
+      (hga-icons/icon :solid :layer-group :color :black) (str "Key Event: " (ke->ke-name ke))
+      (when @*opened?
+        (when (#{:inception :rotation} (:key-event/type ke))
+          [:div.ke-info
+           (for [[label val] {"Keys"           (-> ke :key-event/signing-keys str)
+                              "Threshold"      (-> ke :key-event/threshold threshold->threshold-view)
+                              "Next Keys"      (-> ke :key-event/next-signing-keys str)
+                              "Next Threshold" (-> ke :key-event/next-threshold threshold->threshold-view)}]
+             [:div
+              [:div label]
+              [:div val]]
+             #_[:tr [:td label] [:td val]])]))]]))
+
 (defc message-view < rum/reactive
   [my-aid-topic-path topic-path {:feed-item/keys [kind data proposal text creator idx reactions from-event] :as feed-item}]
   (let [my-member-init-key (actrl/topic-path->member-init-key topic-path)
@@ -338,21 +372,8 @@
                  [:span.message-reaction-count (count reactors)])])])])
 
       :novel-ke
-      (let [{:feed-item/keys [ke concluded-by-event concluded-by-event]} feed-item]
-        [:div.message.creator-aid-bot (hga-inspector/inspectable concluded-by-event)
-         [:div.message-content
-          (case (-> ke :key-event/type)
-            :inception
-            [:div.row (hga-icons/icon :solid :layer-group :color :black) "Key Event: Inception" #_"ID has been incepted"
-             #_(ke-keys-view ke)
-             #_(ke-anchors-view ke)]
-            :rotation
-            [:div.row (hga-icons/icon :solid :layer-group :color :black) "Key Event: Rotation" #_"Keys has been rotated"
-             #_(ke-keys-view ke)
-             #_(ke-anchors-view ke)]
-            :interaction
-            [:div.row (hga-icons/icon :solid :layer-group :color :black) "Key Event: Interaction" #_"Data has been anchored"
-             #_(ke-anchors-view ke)])]])
+      (message-ke-view feed-item)
+
       [:div.message {:style {:white-space :pre
                              :font-family :monospace}}
        (with-out-str (clojure.pprint/pprint feed-item))])))
