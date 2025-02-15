@@ -3,7 +3,7 @@
    [hashgraph.main :as hg]
    [hashgraph.topic :as hgt]
    [hashgraph.schemas :as hgs]
-   [hashgraph.utils.core :refer [hash= map-vals] :refer-macros [defn* l letl letl2 when-let* when-letl*] :as utils]
+   [hashgraph.utils.core :refer [hash= map-vals] :refer-macros [defn* l nl letl letl2 when-let* when-letl*] :as utils]
    [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
 
    [app.styles :refer [reg-styles!] :as styles]
@@ -15,13 +15,14 @@
    [rum.core :refer [defc defcs] :as rum]
    [clojure.set :as set]
    [clojure.test :refer [deftest testing is are run-tests]]
+   [clojure.data]
    [malli.core :as m]
    [app.control :as actrl]))
 
 
 (defn topic-path->topic-gossiper-id [topic] (keyword (str "topic-gossiper-" (hash topic))))
 
-(defonce *topic-path->creator->latest-acked-tip-tx-event (atom (hash-map)))
+(defonce *topic-path->creator->latest-acked-creator->sp-tip-tx-event (atom (hash-map)))
 (defonce *topic-path->creator->latest-sent-tip (atom (hash-map)))
 (defonce *topic-path->all-sent-tip (atom (hash-map)))
 
@@ -35,43 +36,47 @@
     (when-let* [my-creator     (hg/creator new-tip-taped)
                 other-creators (not-empty (-> new-tip-taped hg/evt->db :active-creators (disj my-creator)))]
       (l [:topic-gossiper topic-path new-tip-taped my-creator other-creators])
-      (letl2 [topic          (last topic-path)
-              cr             (-> new-tip-taped hg/->concluded-round)
-              db             (-> cr hg/cr->db)
-              creator->unique-tip   (-> new-tip-taped hg/event->creator->unique-tip)
-              creator->tip-tx-event (-> new-tip-taped hg/event->creator->tip-tx-event)
-              tip-tx-event          (-> my-creator creator->tip-tx-event)
-              need-consensus?       (-> new-tip-taped hg/event->not-received-tx-events first some?)
-              *sent?                (atom false)]
+      (letl2 [topic                    (last topic-path)
+              cr                       (-> new-tip-taped hg/->concluded-round)
+              db                       (-> cr hg/cr->db)
+              creator->unique-tip      (-> new-tip-taped hg/event->creator->unique-tip)
+              creator->sp-tip-tx-event (-> new-tip-taped hg/event->creator->sp-tip-tx-event)
+              *sent?                   (atom false)]
         (doseq [other-creator (shuffle other-creators)
                 :while        (not @*sent?)]
-          (when-let [send-reasons
-                     (not-empty
-                      (when (letl2 [last-sent-tip (get-in @*topic-path->creator->latest-sent-tip [topic-path other-creator])]
-                              (or (nil? last-sent-tip)
-                                  (and (letl2 [havent-sent? (not (hash= new-tip-taped last-sent-tip))]
-                                         havent-sent?)
+          (when (letl2 [last-sent-tip (get-in @*topic-path->creator->latest-sent-tip [topic-path other-creator])]
+                  (or (nil? last-sent-tip)
+                      (and (nl :havent-sent?
+                               (not (hash= new-tip-taped last-sent-tip)))
 
-                                       (letl2 [not-sybil? (-> new-tip-taped hg/event->creator->tips (get other-creator) count (<= 1))]
-                                         not-sybil?)
+                           (nl :not-sybil?
+                               (-> new-tip-taped hg/event->creator->tips (get other-creator) count (<= 1)))
 
-                                       (or (letl2 [know-other-creator-learned-sent-tip? (some-> other-creator
-                                                                                                creator->unique-tip
-                                                                                                hg/event->creator->unique-tip
-                                                                                                (get my-creator)
-                                                                                                (hg/ancestor? last-sent-tip))]
-                                             know-other-creator-learned-sent-tip?)
-                                           ;; mayb derive reasons as f(event, creator)
-                                           (letl2 [he-would-not-need? (not (contains? (:send-reasons (meta last-sent-tip)) :send-reason/need-consensus))]
-                                             he-would-not-need?)))))
+                           (or (nl :know-other-creator-learned-sent-tip?
+                                   (some-> other-creator
+                                           creator->unique-tip
+                                           hg/event->creator->unique-tip
+                                           (get my-creator)
+                                           (hg/ancestor? last-sent-tip)))
 
+                               ;; mayb derive reasons as f(event, creator)
+                               (nl :he-would-not-need?
+                                   (not (contains? (:send-reasons (meta last-sent-tip)) :send-reason/need-consensus)))))))
+
+            (when-let [send-reasons
+                       (not-empty
                         (cond-> #{}
                           (hg/root-event? new-tip-taped)
                           (conj :send-reason/root-event)
 
-                          need-consensus?
+                          (nl :need-consensus?
+                              (or (not (hash= (-> new-tip-taped at/event->projected-db :ke)
+                                              (-> db :ke)))
+                                  (not= (-> new-tip-taped at/event->projected-db :active-creators)
+                                        (-> db :active-creators))))
                           (conj :send-reason/need-consensus)
 
+                          #_#_
                           (when-letl* [other-creator-unique-tip           (-> other-creator creator->unique-tip)
                                        other-creator-not-known-crs        (->> cr
                                                                                (iterate :concluded-round/prev-concluded-round)
@@ -89,24 +94,41 @@
                                                                                (some (fn [not-known-cr]
                                                                                        (->> not-known-cr
                                                                                             :concluded-round/es-r
-                                                                                            (some (comp some? hg/tx))))))]
+                                                                                            (some hg/tx)))))]
                             other-creator-not-known-useful-cr?)
                           (conj :send-reason/needs-cr)
 
-                          (letl2 [needs-ack? (not (hash= tip-tx-event (get-in @*topic-path->creator->latest-acked-tip-tx-event [topic-path other-creator])))]
-                            needs-ack?)
-                          (conj :send-reason/needs-ack))))]
-            (letl2 [g$ (hgt/topic-hash+grafter-tip+graftee->g$ (hash (last topic-path)) new-tip-taped other-creator)]
-              (swap! *topic-path->creator->latest-acked-tip-tx-event assoc-in [topic-path other-creator] tip-tx-event)
-              (swap! *topic-path->creator->latest-sent-tip assoc-in [topic-path other-creator] (vary-meta new-tip-taped assoc :send-reasons send-reasons))
-              (reset! *sent? true)
-              #_(if (-> new-tip-taped meta :tip/tape count (> 250))
-                  (l [:aborting-sending-g$-after-250-events]))
-              (letl2 [other-creator-member-init-key (nth (:member-init-keys-log db) other-creator)
-                      other-creator-did-peer        (get-in db [:member-init-key->did-peer other-creator-member-init-key])]
-                (l [:sending-g$-to g$ other-creator other-creator-member-init-key other-creator-did-peer])
-                (send-message other-creator-did-peer {:type "https://didcomm.org/hashgraph/1.0/g$",
-                                                      :body g$})))))
+                          (when-letl* [other-creator-unique-tip (-> other-creator creator->unique-tip)
+                                       other-creator-db         (-> other-creator-unique-tip hg/evt->db) ;; darn inefficient, but darn simple
+                                       doesnt-know-novel-ke?    (not (hash= (-> other-creator-db :ke)
+                                                                            (-> db :ke)))]
+                            (l {:my-ke   (-> db :ke)
+                                :oc-ke   (-> other-creator-db :ke)
+                                :ke-diff (clojure.data/diff (-> db :ke) (-> other-creator-db :ke))})
+                            doesnt-know-novel-ke?)
+                          (conj :send-reason/needs-cr)
+
+                          (nl :needs-ack?
+                              (or (nl :sp-tips-differ?
+                                      (not (hash= creator->sp-tip-tx-event (get-in @*topic-path->creator->latest-acked-creator->sp-tip-tx-event [topic-path other-creator]))))
+                                  ;; afaik, he doesn't know I know of Topic
+                                  (let [?oc-tip (-> creator->unique-tip (get other-creator))]
+                                    (or (nil? ?oc-tip)
+                                        (-> ?oc-tip hg/event->creator->unique-tip (get my-creator) nil?)))))
+                          (conj :send-reason/needs-ack)))]
+              (l send-reasons)
+              (letl2 [g$ (hgt/topic-hash+grafter-tip+graftee->g$ (hash (last topic-path)) new-tip-taped other-creator)]
+                (swap! *topic-path->creator->latest-acked-creator->sp-tip-tx-event assoc-in [topic-path other-creator] creator->sp-tip-tx-event)
+                (swap! *topic-path->creator->latest-sent-tip assoc-in [topic-path other-creator] (vary-meta new-tip-taped assoc :send-reasons send-reasons))
+                (reset! *sent? true)
+
+                #_(if (-> new-tip-taped meta :tip/tape count (> 250))
+                    (l [:aborting-sending-g$-after-250-events]))
+                (letl2 [other-creator-member-init-key (nth (:member-init-keys-log db) other-creator)
+                        other-creator-did-peer        (get-in db [:member-init-key->did-peer other-creator-member-init-key])]
+                  (l [:sending-g$-to g$ other-creator other-creator-member-init-key other-creator-did-peer])
+                  (send-message other-creator-did-peer {:type "https://didcomm.org/hashgraph/1.0/g$",
+                                                        :body g$}))))))
         (when-not @*sent?
           (l [:all-sent topic-path new-tip-taped])
           (l (swap! *topic-path->all-sent-tip assoc topic-path new-tip-taped)))))))
