@@ -41,6 +41,12 @@ rum/react
         (int? topic-path)
         (str topic-path "-k" idx)
         :else
+        (-> topic-path
+            (->> (map :topic-name)
+                 (interpose "-")
+                 (apply str))
+            (str "-k" idx))
+        #_
         (str (hash topic-path) "-k" idx)))
 
 (defn init-control! [topic-path]
