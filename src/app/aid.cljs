@@ -3,7 +3,7 @@
             [hashgraph.topic :as hgt]
             [hashgraph.members :as hg-members]
             [hashgraph.utils.core
-             :refer [color-rgba-str]
+             :refer [bake-alpha rgb->css-str subvecs]
              :refer-macros [defn* l letl letl2 when-let*]
              :as utils]
             [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom]]
@@ -50,16 +50,15 @@
                           :transform        "rotate(0deg)"
                           :transition       (t :transform (/ tt 2))
                           :cursor           :pointer}]
-    [:.member {:position :absolute
+    [:.member {:position   :absolute
                :transition (t :opacity (/ tt 2)
                               :left tt
-                              :top tt)
-               }
-     [:&.me
+                              :top tt)}
+     [:&.my
       [:.member-name {:font-weight :bold}]]
      [:.avatar {:position :relative
-                :width  (px hga-view/avatar-size)
-                :height (px hga-view/avatar-size)}
+                :width    (px hga-view/avatar-size)
+                :height   (px hga-view/avatar-size)}
       [:.member-name {:position   :absolute
                       :min-width  :max-content
                       :left       (px (/ hga-view/avatar-size 2))
@@ -80,21 +79,6 @@
 
 (defn did->alias [did]
   (apply str (take 3 (drop 16 did))))
-
-#_(defn* ^:memoizing topic->aid->color [topic]
-  )
-
-(defn bake-alpha [rgba]
-  (l rgba)
-  (gc/rgba (-> (->> [(:red rgba) (:green rgba) (:blue rgba)]
-                    (mapv (fn [c]
-                            (let [rem-c   (- 255 c)
-                                  added-c (- rem-c (* rem-c (:alpha rgba)))]
-                              (+ c added-c)))))
-               (conj 1))))
-
-(defn rgb->css-str [{r :red g :green b :blue}]
-  (str "rgb(" r "," g "," b ")"))
 
 (defn aid-depth->y [aid-depth]
   (-> (/ hga-view/avatar-size 2)
@@ -139,11 +123,13 @@
           [:div.grouping-area]])])))
 
 (defc member-aid-info-view <
-  {:key-fn (fn [{:member-aid-info/keys [member-init-key aid]}] (or member-init-key (hash aid)))}
-  [{:member-aid-info/keys [aid alias creation-time status stake pos-x color child-depth parent-depth member-aid-infos]} hierarchical-view? total-depth head? headless?]
+  {:key-fn (fn [_ {:member-aid-info/keys [member-init-key aid#]}] (or member-init-key aid#))}
+  [selected-my-aids# {:member-aid-info/keys [aid# alias creation-time status stake pos-x color child-depth parent-depth member-aid-infos]} hierarchical-view? total-depth head? headless?]
   [:<>
-   [:div.member {:class [(str "status-" (name (l status)))
-                         (when (nil? member-aid-infos) "root-aid")]
+   [:div.member {:class [(str "status-" (name status))
+                         (when (nil? member-aid-infos) "root-aid")
+                         (when (contains? (l selected-my-aids#) (l aid#))
+                           "my")]
                  :style {:left (-> pos-x hga-view/idx->x (- (/ hga-view/avatar-size 2)))
                          :top  (if-not hierarchical-view?
                                  (-> parent-depth aid-depth->y)
@@ -160,11 +146,15 @@
         alias]])]
    (when member-aid-infos
      (for [member-aid-info member-aid-infos]
-       (member-aid-info-view member-aid-info hierarchical-view? total-depth false headless?)))])
+       (member-aid-info-view selected-my-aids# member-aid-info hierarchical-view? total-depth false headless?)))])
 
 (defcs topic-path-aids-view < rum/static rum/reactive (rum/local false  ::*hierarchy-opened?)
   [{::keys [*hierarchy-opened?]} topic-path viz-width {:member-aid-info/keys [alias parent-depth] :as member-aid-info}]
-  (let [headless? (= alias "???")]
+  (let [headless?         (= alias "???")
+        selected-my-aids# (->> (rum/react ac/*selected-my-aid-topic-path)
+                               subvecs
+                               (map (rum/react ac/*topic-path->my-aid#))
+                               (into #{}))]
     (when-let* [active-parent-depth (if headless?
                                       (dec parent-depth)
                                       parent-depth)
@@ -188,7 +178,7 @@
                                                        (- (/ hierarchy-toggle-size 2)))}
                                   :on-click #(swap! *hierarchy-opened? not)}
           (hga-icons/icon :solid :angle-up :color :black)])
-       (member-aid-info-view (l member-aid-info) (rum/react *hierarchy-opened?) active-parent-depth true headless?)]))
+       (member-aid-info-view selected-my-aids# (l member-aid-info) (rum/react *hierarchy-opened?) active-parent-depth true headless?)]))
 
   #_
   (when-let* [#_#_root-aids-sorted (l (rum/react hga-playback/*root-aids-sorted))  ;; does not preserve removed member-aids
