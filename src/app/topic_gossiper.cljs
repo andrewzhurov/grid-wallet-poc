@@ -133,6 +133,8 @@
           (l [:all-sent topic-path new-tip-taped])
           (l (swap! *topic-path->all-sent-tip assoc topic-path new-tip-taped)))))))
 
+(def gossip-ms 333)
+
 (defn start-timely-dissemination!->stop!
   ([]
    (l :timely-dissemination!-started)
@@ -142,7 +144,7 @@
      #_(l :timely-dissemination!)
      (doseq [[topic-path tip-taped] @as/*topic-path->tip-taped]
        (topic-gossiper topic-path tip-taped))
-     (js/setTimeout #(start-timely-dissemination!->stop! *stop?) 333)
+     (js/setTimeout #(start-timely-dissemination!->stop! *stop?) gossip-ms)
      #(do (l :timely-dissemination!-stopped) (reset! *stop? true)))))
 
 #_
