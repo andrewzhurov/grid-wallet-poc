@@ -11,15 +11,15 @@
   (fn [topic-path->viz-subjective-db]
     (->> topic-path->viz-subjective-db
          vals
-         (map (fn [viz-subjective-db] (some-> viz-subjective-db :feed :feed/disclosed-acdcs)))
+         (map (fn [viz-subjective-db] (some-> viz-subjective-db :disclosed-acdcs)))
          (filter some?)
          (apply set/union))))
 
-(deflda *aid->attributed-acdcs [*disclosed-acdcs]
+(deflda *aid#->attributed-acdcs [*disclosed-acdcs]
   (fn [disclosed-acdcs]
     (->> disclosed-acdcs
-         (reduce (fn [aid->attributed-acdcs-acc disclosed-acdc]
-                   (let [?issuee-aid (-> disclosed-acdc :acdc/attribute :issuee)]
-                     (cond-> aid->attributed-acdcs-acc
-                       ?issuee-aid (update ?issuee-aid conjs disclosed-acdc))))
+         (reduce (fn [aid#->attributed-acdcs-acc disclosed-acdc]
+                   (let [?issuee-aid# (-> disclosed-acdc :acdc/attribute :issuee)]
+                     (cond-> aid#->attributed-acdcs-acc
+                       ?issuee-aid# (update ?issuee-aid# conjs disclosed-acdc))))
                  (hash-map)))))
