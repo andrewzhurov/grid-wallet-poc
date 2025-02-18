@@ -41,4 +41,9 @@
             ["@mui/lab/TabPanel$default" :as tab-panel]
 
             ["@mui/material/Typography$default" :as typography]
+
+            ["@mui/material/FormControl$default" :as form-control]
+            ["@mui/material/InputLabel$default" :as input-label]
+            ["@mui/material/Select$default" :as select]
+            ["@mui/material/MenuItem$default" :as menu-item]
             ))
