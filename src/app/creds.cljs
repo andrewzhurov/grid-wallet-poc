@@ -5,7 +5,7 @@
    [hashgraph.members :as hg-members]
    [hashgraph.schemas :as hgs]
    [hashgraph.utils.core
-    :refer [xor hash= not-neg mean conjs conjv vec-union map-keys map-vals filter-map-vals reverse-map map-prim indexed]
+    :refer [xor hash= not-neg mean conjs disjs conjv vec-union map-keys map-vals filter-map-vals reverse-map map-prim indexed]
     :refer-macros [defn* l letl letl2 when-let*] :as utils]
    [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda defda]]
 
@@ -914,7 +914,7 @@
             new-member-init-keys          (->> member-aids$ (mapcat new-member-aid$->member-init-keys) vec)
             new-member-init-keys-log      (vec-union member-init-keys-log new-member-init-keys)
 
-            fraction-paths                (-> new-threshold threshold->fractions-paths)
+            fraction-paths                (-> new-threshold threshold->fractions-paths) ;; remove?
             key-weights                   (-> new-threshold threshold->key-weights)
             total-keys-weight             (->> key-weights (reduce +))
             rel-key-weights               (->> key-weights (mapv (fn [key-weight] (/ key-weight total-keys-weight))))
@@ -1327,8 +1327,16 @@
                  init-key)))))
 
 (hg/reg-tx-handler! :propose
-    (fn [db {:event/keys [creator]} proposal]
-      (update-in db [:proposal->agreed-creators proposal] conjs creator)))
+    (fn [db {:event/keys [creator]} [_ proposal]]
+      (-> db
+          (update-in [:proposal->agreed-creators proposal] conjs creator)
+          (update-in [:proposal->disagreed-creators proposal] disjs creator))))
+
+(hg/reg-tx-handler! :dispose
+    (fn [db {:event/keys [creator]} [_ proposal]]
+      (-> db
+          (update-in [:proposal->agreed-creators proposal] disjs creator)
+          (update-in [:proposal->disagreed-creators proposal] conjs creator))))
 
 ;; TODO clear accepted incept proposal
 (defn sc-anchor-accepted-issue-proposals [{:keys [proposal->agreed-creators member-init-keys-log signing-key->next-signing-key-hash threshold ke member-init-key->init-key] :as db} _]
@@ -1336,8 +1344,8 @@
   (l (if (nil? ke)
        db
        (letl2 [acceptable-proposals (->> proposal->agreed-creators
-                                         (remove (comp (set (:accepted-proposals db)) first))
-                                         (filter (fn [[[_ proposal-kind :as proposal] agreed-creators]]
+                                         (remove (comp (into (set (:accepted-proposals db)) (set (:rejected-proposals db))) first))
+                                         (filter (fn [[[proposal-kind :as proposal] agreed-creators]]
                                                    (l [:filtering-proposals proposal agreed-creators])
                                                    (and (= :issue proposal-kind)
                                                         (letl2 [init-key->signing-key (db->init-key->signing-key db)
@@ -1352,7 +1360,7 @@
                                          (map first)
                                          doall)
                acceptable-acdcs*    (->> acceptable-proposals
-                                         (map (fn [[_ _ & acdcs*]] acdcs*))
+                                         (map (fn [[_ & acdcs*]] acdcs*))
                                          (reduce into []))
                issuer-aid           (ke->ke-icp ke)
                ?acdc->te            (when (not-empty acceptable-acdcs*)
@@ -1374,12 +1382,33 @@
 
            (some? ?acdc->te)
            (-> (assoc :ke {:key-event/type    :interaction
-                           :key-event/anchors (vals ?acdc->te)
+                           :key-event/anchors (vec (concat (keys ?acdc->te) (vals ?acdc->te)))
                            :key-event/prior   ke})
-               (update :acdcs (fn [?prior-acdcs] (set/union (or ?prior-acdcs #{}) (set (keys ?acdc->te)))))))))))
+               (update :acdcs set/union (set (keys ?acdc->te)))))))))
 
-(l :regging-smartcontracts)
-(reset! hg/*smartcontracts [sc-bump-received-r sc-incept sc-rotate sc-anchor-accepted-issue-proposals])
+(defn sc-dispose-proposals [{:keys [proposal->disagreed-creators member-init-keys-log signing-key->next-signing-key-hash threshold ke member-init-key->init-key] :as db} _]
+  (if (nil? ke)
+    db
+    (letl2 [disposable-proposals (->> proposal->disagreed-creators
+                                      (remove (comp (into (set (:accepted-proposals db)) (set (:rejected-proposals db))) first))
+                                      (filter (fn [[[_ proposal-kind :as proposal] disagreed-creators]]
+                                                (and (= :issue proposal-kind)
+                                                     (letl2 [init-key->signing-key (db->init-key->signing-key db)
+                                                             disagreed-signing-keys
+                                                             (->> disagreed-creators
+                                                                  (set/intersection (-> db :active-creators))
+                                                                  (map member-init-keys-log)
+                                                                  (map member-init-key->init-key)
+                                                                  (map init-key->signing-key)
+                                                                  (set))]
+                                                       (ke+agreed-keys->threshold-satisfied? ke disagreed-signing-keys)))))
+                                      (map first)
+                                      doall)]
+      (cond-> db
+        (not-empty disposable-proposals)
+        (update :rejected-proposals (fn [?rejected-proposals] (into (or ?rejected-proposals #{}) disposable-proposals)))))))
+
+(reset! hg/*smartcontracts [sc-bump-received-r sc-incept sc-rotate sc-anchor-accepted-issue-proposals sc-dispose-proposals])
 
 
 (defn sole-controller? [db]
@@ -1514,7 +1543,7 @@
 (def gleif-e1
   {hg/creator       gleif-k0
    hg/creation-time (.now js/Date)
-   hg/tx            [:propose :issue gleif-acdc-qvi]
+   hg/tx            [:propose [:issue gleif-acdc-qvi]]
    hg/self-parent   gleif-e0})
 
 (def gleif-e2
@@ -2004,25 +2033,25 @@
 
 
 (defn propose-issue-acdc-join-invite! [my-aid-topic-path issuer-aid# issuee-aid#]
-  (at/add-event! my-aid-topic-path {:event/tx [:propose :issue {:acdc/schema    :acdc-join-invite
-                                                                :acdc/issuer    issuer-aid#
-                                                                :acdc/attribute {:issuee  issuee-aid#
-                                                                                 :purpose :join-invite}}]}))
+  (at/add-event! my-aid-topic-path {:event/tx [:propose [:issue {:acdc/schema    :acdc-join-invite
+                                                                 :acdc/issuer    issuer-aid#
+                                                                 :acdc/attribute {:issuee  issuee-aid#
+                                                                                  :purpose :join-invite}}]]}))
 
-(defn propose-issue-acdc-qvi! [issuer-topic-path issuer-aid# issuee-aid#]
+(defn propose-issue-acdc-qvi! [issuer-topic-path issuer-aid# issuee-aid# lei]
   (let [acdc-qvi* {:acdc/schema    :acdc-qvi
                    :acdc/issuer    issuer-aid#
                    :acdc/attribute {:issuee issuee-aid#
-                                    :lei    "<LEI of QVI>"}}]
-    (at/add-event! issuer-topic-path {:event/tx [:propose :issue acdc-qvi*]})))
+                                    :lei    lei}}]
+    (at/add-event! issuer-topic-path {:event/tx [:propose [:issue acdc-qvi*]]})))
 
-(defn propose-issue-acdc-le! [issuer-topic-path issuer-aid# issuee-aid# issuer-aid-attributed-acdc-qvi]
+(defn propose-issue-acdc-le! [issuer-topic-path issuer-aid# issuee-aid# lei issuer-aid-attributed-acdc-qvi]
   (let [acdc-le* {:acdc/schema     :acdc-le
                   :acdc/issuer     issuer-aid#
                   :acdc/attribute  {:issuee issuee-aid#
-                                    :lei    "<LEI of LE>"}
+                                    :lei    lei}
                   :acdc/edge-group {:qvi issuer-aid-attributed-acdc-qvi}}]
-    (at/add-event! issuer-topic-path {:event/tx [:propose :issue acdc-le*]})))
+    (at/add-event! issuer-topic-path {:event/tx [:propose [:issue acdc-le*]]})))
 
 
 (deflda *topic-path->acdcs [as/*topic-path->db] (filter-map-vals :acdcs))
@@ -2035,8 +2064,8 @@
    (cond-> db
      (not (contains? disclosed-acdcs acdc))
      (-> (update :disclosed-acdcs conjs acdc)
-         (update-in [:feed :feed/items] conjv {:feed-item/kind       :text-message
-                                               :feed-item/text       "<credential>"
+         (update-in [:feed :feed/items] conjv {:feed-item/kind       :acdc-presentation
+                                               :feed-item/acdc       acdc
                                                :feed-item/creator    creator
                                                :feed-item/from-event event})))))
 
@@ -2053,11 +2082,11 @@
          (cond->
              (= :acdc-join-invite schema)
            (update :feed (fn [feed]
-                           (let [proposal [:propose :issue {:acdc/schema    :acdc-join-invite-accepted
-                                                            :acdc/issuer    issuee-aid#
-                                                            :acdc/attribute {:issuee      issuer-aid#
-                                                                             :join-invite acdc
-                                                                             :purpose     :join-invite-accepted}}]]
+                           (let [proposal [:issue {:acdc/schema    :acdc-join-invite-accepted
+                                                   :acdc/issuer    issuee-aid#
+                                                   :acdc/attribute {:issuee      issuer-aid#
+                                                                    :join-invite acdc
+                                                                    :purpose     :join-invite-accepted}}]]
                              (cond-> feed
                                (not (contains? (-> feed :feed/proposal->feed-item-idx keys set) proposal))
                                (-> (update :feed/items conjv {:feed-item/kind       :proposal
