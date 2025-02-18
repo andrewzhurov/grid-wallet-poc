@@ -1,78 +1,43 @@
-# DIDComm Browser Demo
+# grID Wallet POC
 
-## Overview
+This is a Proof-of-Concept of a KERI Wallet for local-first environment, testing an approach of Group AID management via a Hashgraph/Blocklace/Merkle-DAG of device communication and a distributed consensus algorithm run by each member peer. https://github.com/andrewzhurov/hashgraph
 
-The [DIDComm Browser Demo](https://demo.didcomm.org) showcases a fully functioning DIDComm v2 application capable of both sending and receiving messages through a DIDComm v2 capable mediator. The primary goal of the demo is to simplify the understanding of [DID Communication](https://didcomm.org) (DIDComm) principles by implementing only essential protocols.
+Note: there are plenty of mocked things. No signing is done aside from DIDComm messages. A makeshift KERI-like impl is in use. Not a production-lined project, but a testbed for ideas.
 
-### Supported Protocols
+AID<->AID communication is presently facilitated by DIDComm, this repo makes use of https://github.com/decentralized-identity/didcomm-demo
+In theory, isn't a hard dependency, some sort of a mailbox is desired.
 
-**Mediation Protocols:**
+Features:
+Connect Invite / Connect Invite Accepted to establish AID<->AID connection.
+AID<->AID communication, where each member device participates.
+Merkle-DAG of communication, cordially synced between devices. As in
+Whatsapp-like Group Topics with arbitrary amount of Member AIDs.
+Ability to convert a Group to a Group AID.
+Group Membership.
+p2p disclosure of novel KEs.
+Control Propagation from Parent AID -> Child AID.
+Long-lasting issuance of ACDCs / processing proposals.
+Some junky UI.:)
 
-- [Coordinate Mediation 3.0](https://didcomm.org/coordinate-mediation/3.0/)
-- [Message Pickup 3.0](https://didcomm.org/messagepickup/3.0/)
 
-**Core Protocols:**
+Some tech details:
+State is mostly kept in app.state/*topic-path->tip-taped atom.
+Which stores the last event for each topic-path.
+(as device may be in the same `topic` under different identities, we need to track `topic-path`->`tip`, not `topic`->`tip`)
+`taped` means `tip` comes with metadata of novel, subjectively ordered, received events.
+Handy for maintainance of subjective views, such as feeds of messages.
 
-- [Routing 2.0](https://didcomm.org/routing/2.0/) (via the [didcomm TypeScript library](https://www.npmjs.com/package/didcomm))
-- [Discover Features 2.0](https://didcomm.org/discover-features/2.0/)
-- [Trust Ping 2.0](https://didcomm.org/trust-ping/2.0/)
+Most of other things are derived out of *topic-path->tip-taped.
 
-**Utility Protocols for Enhanced Usability:**
 
-- [Basic Message 2.0](https://didcomm.org/basicmessage/2.0/)
-- [User Profile 1.0](https://didcomm.org/user-profile/1.0/)
+## Running the Application
 
-**DID Support:**
-Currently, only `did:peer:2` DIDs are supported. Upon page load, a new `did:peer:2` DID is generated, which connects to a mediator to negotiate mediation.
+```bash
+npm install    # Or `yarn install`
+npm run build  # Or `yarn build`
+npx shadow-cljs release :app
 
-## Getting Started
-
-### Prerequisites
-
-Before you can run or build the DIDComm Browser Demo, ensure you have the following installed:
-
-- [Node.js](https://nodejs.org/) (LTS version recommended)
-- [npm](https://www.npmjs.com/) (comes with Node.js) or [Yarn](https://yarnpkg.com/)
-
-### Installation
-
-Clone the repository and install the dependencies:
-
-`git clone https://github.com/decentralized-identity/didcomm-demo.git`
-`cd didcomm-demo`
-`npm install`  # Or use `yarn install` if you prefer yarn over npm
-
-### Running the Application
-
-To run the application locally:
-
-`npm start`  # Or `yarn start`
-
-This command starts a local development server. Open http://localhost:8080 in your browser to view the application.
-
-### Building the Application
-
-To build the application for production:
-
-`npm run build`  # Or `yarn build`
-
-This will bundle the application into static files in the `dist/` directory.
-
-### Formatting Code
-
-To format the TypeScript files in the `src/` directory:
-
-`npm run format`  # Or `yarn format`
-
-## Contributing
-
-Contributions to the DIDComm Browser Demo are welcome! Here are a few ways you can help:
-
-- Report issues and suggest features in the [Issues](https://github.com/decentralized-identity/didcomm-demo/issues) section of the repository.
-- Submit pull requests with bug fixes and new features.
-
-Please read [CONTRIBUTING.md](https://github.com/decentralized-identity/didcomm-demo/CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/decentralized-identity/didcomm-demo/blob/main/LICENSE) file for details.
+# Serve the app in any way you prefer, e.g.,
+python3 -m http.server -d public/
+# Open in your browser the url, e.g., http://localhost:8000, for the above server
+```
