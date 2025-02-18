@@ -33,9 +33,10 @@ Most of other things are derived out of *topic-path->tip-taped.
 ## Running the Application
 
 ```bash
-npm install    # Or `yarn install`
-npm run build  # Or `yarn build`
-npx shadow-cljs release :app
+npm install                     # Or `yarn install`
+npm run build                   # Or `yarn build`; to build DIDComm's worker.js via webpack
+npx tsc -p ./cljs-tsconfig.json # to compile some DIDComm .ts modules to .js (API used from .cljs)
+npx shadow-cljs release :app    # to build main.js of the CLJS app.
 
 # Serve the app in any way you prefer, e.g.,
 python3 -m http.server -d public/
