@@ -94,20 +94,36 @@
              subjective-db
              @*post-subjective-db-handlers)))
 
-(defn prev-subjective-db+novel-event->subjective-db
-  [prev-subjective-db novel-event]
+(defn subjective-receive-event
+  [prev-subjective-db novel-event concluding-events#]
   (cond-> prev-subjective-db
-    (:event/tx novel-event) (apply-subjective-tx-handler novel-event)))
+    (:event/tx novel-event) (apply-subjective-tx-handler novel-event)
+
+    (concluding-events# novel-event)
+    (apply-post-subjective-db-handlers novel-event)))
+
+(defn* ^:memoizing evt->root-path [evt]
+  (if (hg/root-event? evt)
+    [evt]
+    (let [prev-root-path (or (some-> (hg/self-parent evt) evt->root-path)
+                             (some-> (hg/other-parent evt) evt->root-path))]
+      (conj prev-root-path evt))))
+
+(defn tip->concluding-events [tip]
+  (if (hg/self-parent tip)
+    #{tip}
+    (-> tip evt->root-path set)))
 
 (defn* ^:memoizing tip-taped->subjective-db [tip-taped]
   (l [:tip-taped->subjective-db tip-taped])
   (l (let [prev-subjective-db (or (some-> (hg/self-parent tip-taped) tip-taped->subjective-db)
-                                  (hg/event->topic tip-taped))
-           novel-events       (-> tip-taped meta :tip/novel-events)]
-       (-> (reduce prev-subjective-db+novel-event->subjective-db
-                   prev-subjective-db
-                   novel-events)
-           (apply-post-subjective-db-handlers tip-taped)))))
+                                  (-> (hg/event->topic tip-taped)
+                                      (assoc :my-creator (:event/creator tip-taped))))
+           novel-events       (-> tip-taped meta :tip/novel-events)
+           concluding-events# (-> tip-taped tip->concluding-events)]
+       (reduce (fn [db-acc novel-event] (subjective-receive-event db-acc novel-event concluding-events#))
+               prev-subjective-db
+               novel-events))))
 
 (deflda *topic-path->subjective-db [as/*topic-path->tip-taped]
   (map-vals tip-taped->subjective-db))
