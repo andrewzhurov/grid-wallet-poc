@@ -15,7 +15,8 @@
         ;; com.taoensso/timbre {:mvn/version "6.3.1"}
         ;; com.taoensso/tufte  {:mvn/version "2.6.3"}
         ;; djblue/portal       {:mvn/version "0.50.0"}
-        hashgraph/hashgraph {:local/root "/home/user1/gits/hashgraph/"}
+        hashgraph/hashgraph {:git/url "https://github.com/andrewzhurov/hashgraph"
+                             :git/sha "e1cd549c9dca8bb4e8b39af6057672e9964c3f5e"} #_{:local/root "/home/user1/gits/hashgraph/"}
 
         ;; fix openjdk bug that causes ClassNotFoundException: org.xnio.channels.StreamSourceChannel
         ;; org.jboss.xnio/xnio-api           {:mvn/version "3.8.16.Final"}
