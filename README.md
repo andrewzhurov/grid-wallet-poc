@@ -41,3 +41,8 @@ npx shadow-cljs release :app
 python3 -m http.server -d public/
 # Open in your browser the url, e.g., http://localhost:8000, for the above server
 ```
+
+
+## License
+- Original code (up to f5383e1): [MIT](LICENSE.md)
+- Modifications/new code: [Apache 2.0](LICENSE-APACHE.md)
