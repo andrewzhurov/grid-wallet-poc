@@ -21,13 +21,13 @@ Some junky UI.:)
 
 
 Some tech details:
-State is mostly kept in app.state/*topic-path->tip-taped atom.
-Which stores the last event for each topic-path.
+State is mostly kept in `app.state/*topic-path->tip-taped` atom.
+Which stores the last event for each `topic-path`.
 (as device may be in the same `topic` under different identities, we need to track `topic-path`->`tip`, not `topic`->`tip`)
 `taped` means `tip` comes with metadata of novel, subjectively ordered, received events.
 Handy for maintainance of subjective views, such as feeds of messages.
 
-Most of other things are derived out of *topic-path->tip-taped.
+Most of other things are derived out of `*topic-path->tip-taped`.
 
 
 ## Running the Application
@@ -36,12 +36,20 @@ Most of other things are derived out of *topic-path->tip-taped.
 npm install                     # Or `yarn install`
 npm run build                   # Or `yarn build`; to build DIDComm's worker.js via webpack
 npx tsc -p ./cljs-tsconfig.json # to compile some DIDComm .ts modules to .js (API used from .cljs)
-npx shadow-cljs release :app    # to build main.js of the CLJS app.
+
+# For some reason, compilations without a server fail.
+# And with server, the first one will fail, subsequent succeed.
+npx shadow-cljs server       # Start shadow-cljs server
+npx shadow-cljs release :app # Requests server to compile prod version of the app -> fails
+npx shadow-cljs release :app # Requests server to compile prod version of the app -> expected to succeed
 
 # Serve the app in any way you prefer, e.g.,
 python3 -m http.server -d public/
 # Open in your browser the url, e.g., http://localhost:8000, for the above server
 ```
+
+Alternatively, you could connect to shadow-cljs server in watch mode via an editor, see the respective [editor integration](https://shadow-cljs.github.io/docs/UsersGuide.html#_editor_integration).
+(re-compiles on .cljs file changes)
 
 
 ## License

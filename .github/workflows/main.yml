@@ -32,7 +32,7 @@ jobs:
         java-version: '21'
 
     - name: Install clojure tools
-      uses: DeLaGuardo/setup-clojure@12.5
+      uses: DeLaGuardo/setup-clojure@13.0
       with:
         cli: 1.10.1.693              # Clojure CLI based on tools.deps
 
@@ -50,8 +50,14 @@ jobs:
       with:
         node-version: 14
 
-    - name: Compile prod build
-      run: npx shadow-cljs release :app
+    - name: Start shadow-cljs server
+      run: npx shadow-cljs start
+
+    - name: Try to compile prod app - expected to fail
+      run: npx shadow-cljs release :app || true
+
+    - name: Try to compile prod app - expected to succeed
+      run: npx shadow-cljs release :app      
 
     - name: Setup Pages
       uses: actions/configure-pages@v4
