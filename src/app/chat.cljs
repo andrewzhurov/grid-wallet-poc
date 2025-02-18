@@ -4,15 +4,18 @@
                                          dialog dialog-title dialog-content dialog-content-text dialog-actions
                                          text-field textarea-autosize
 
+                                         box
                                          button fab
                                          zoom fade
-                                         click-away-listener]]
+                                         click-away-listener
+
+                                         form-control input-label select menu-item]]
                    :reload-all)
   (:require [hashgraph.main :as hg]
             [hashgraph.topic :as hgt]
             [hashgraph.app.inspector :as hga-inspector]
             [hashgraph.app.tutorial :refer-macros [i]]
-            [hashgraph.utils.core :refer-macros [defn* l letl letl2 when-let*] :refer [hash= merge-attr-maps conjv conjs] :as utils]
+            [hashgraph.utils.core :refer-macros [defn* l letl letl2 when-let*] :refer [hash= merge-attr-maps conjv conjs disjs] :as utils]
             [hashgraph.app.icons :as hga-icons]
 
             [app.styles :refer [reg-styles! shadow0 shadow1 shadow2 shadow3] :as styles]
@@ -85,6 +88,10 @@
       [:&.from-me {:align-self    :flex-end
                    :border-radius "12px 12px 0px 12px"}]
 
+      [:&.reactable {:min-width (px 116)} ;; hard-coded to fit 2 reactions
+       [:.message-content {:display         :flex
+                           :justify-content :center}]]
+
       [:.message-reactions {:position      :absolute
                             :bottom        (px 12)
                             :left          (px 0)
@@ -95,6 +102,7 @@
                             :padding-right (px message-padding)}
        [:.message-reaction {:display          :flex
                             :align-items      :center
+                            :margin-left      (px 4)
                             :background-color color-primary-lightest
                             :color            color-primary
                             :border-radius    "20px"
@@ -194,19 +202,35 @@
 
 (at/reg-subjective-tx-handler!
  :propose
- (fn [{:keys [feed] :as db} {:event/keys [creator] :as event} proposal]
+ (fn [{:keys [feed] :as db} {:event/keys [creator] :as event} [_ proposal]]
    (if-let [proposal-feed-item-idx (get-in feed [:feed/proposal->feed-item-idx proposal])]
      (-> db
          (update-in [:feed :feed/items proposal-feed-item-idx] (fn [feed-item] (-> feed-item
-                                                                                   (update-in [:feed-item/reactions :agree] conjs creator)
-                                                                                   (update-in [:feed-item/reaction->events :agree] conjs event)))))
+                                                                                   (update-in [:feed-item/reactions :propose] conjs creator)
+                                                                                   (update-in [:feed-item/reaction->events :propose] conjs event)
+                                                                                   (update-in [:feed-item/reactions :dispose] disjs creator)
+                                                                                   (update-in [:feed-item/reaction->events :dispose] (fn [?disagreed-events] (into #{} (remove (fn [evt] (= (hg/creator evt) creator)) ?disagreed-events))))))))
      (-> db
          (update-in [:feed :feed/items] conjv {:feed-item/kind             :proposal
                                                :feed-item/proposal         proposal
                                                :feed-item/creator          :info-bot
-                                               :feed-item/reactions        {:agree #{creator}}
-                                               :feed-item/reaction->events {:agree #{event}}})
+                                               :feed-item/reactions        {:propose #{creator}
+                                                                            :dispose #{}}
+                                               :feed-item/reaction->events {:propose #{event}
+                                                                            :dispose #{}}})
          (assoc-in [:feed :feed/proposal->feed-item-idx proposal] (count (:feed/items feed)))))))
+
+(at/reg-subjective-tx-handler!
+ :dispose
+ (fn [{:keys [feed] :as db} {:event/keys [creator] :as event} [_ proposal]]
+   (if-let [proposal-feed-item-idx (l (get-in feed [:feed/proposal->feed-item-idx proposal]))]
+     (-> db
+         (update-in [:feed :feed/items proposal-feed-item-idx] (fn [feed-item] (-> feed-item
+                                                                                   (update-in [:feed-item/reactions :propose] disjs creator)
+                                                                                   (update-in [:feed-item/reaction->events :propose] (fn [?agreed-events] (into #{} (remove (fn [evt] (= (hg/creator evt) creator)) ?agreed-events))))
+                                                                                   (update-in [:feed-item/reactions :dispose] conjs creator)
+                                                                                   (update-in [:feed-item/reaction->events :dispose] conjs event)))))
+     db)))
 
 #_
 (at/reg-subjective-tx-handler!
@@ -286,24 +310,48 @@
                                                                                 :else            form))
                                                                threshold))))
 
+(defcs acdc-view < rum/reactive (rum/local false :*expanded?)
+  [{:keys [*expanded?]} {:acdc/keys [schema issuer attribute edge-group]}]
+  [:div {:on-click #(do (.stopPropagation %)
+                        (swap! *expanded? not))}
+   [:div {:style {:display :flex}} (hga-icons/icon :solid :certificate :color "black") [:div {:style {:margin-left "6px"}}
+                                                                                        (case schema
+                                                                                          :join-invite          "Join Invite"
+                                                                                          :join-invite-accepted "Join Invite Accepted"
+                                                                                          :acdc-qvi             "QVI"
+                                                                                          :acdc-le              "vLEI"
+                                                                                          (pr-str schema))]]
+   (when @*expanded?
+     [:<>
+      [:div "Issuer: " (rum/react (rum/cursor ac/*aid#->aid-name issuer))]
+      (when-let [issuee (-> attribute :issuee)]
+        [:div "Issuee: " (rum/react (rum/cursor ac/*aid#->aid-name issuee))])
+      (when-let [lei (-> attribute :lei)]
+        [:div "LEI: " lei])
+      (when-let [qvi (-> edge-group :qvi)]
+        [:div (acdc-view qvi)])])])
+
 (defcs message-ke-view < rum/reactive (rum/local false :*opened?)
   [{:keys [*opened?]} feed-item]
   (let [{:feed-item/keys [ke concluded-by-event concluded-by-event]} feed-item]
-    (js/console.log feed-item)
     [:div.message.creator-aid-bot (hga-inspector/inspectable concluded-by-event)
      [:div.message-content {:on-click #(swap! *opened? not)}
       (hga-icons/icon :solid :layer-group :color :black) (str "Key Event: " (ke->ke-name ke))
       (when @*opened?
-        (when (#{:inception :rotation} (:key-event/type ke))
-          [:div.ke-info
-           (for [[label val] {"Keys"           (-> ke :key-event/signing-keys str)
-                              "Threshold"      (-> ke :key-event/threshold threshold->threshold-view)
-                              "Next Keys"      (-> ke :key-event/next-signing-keys str)
-                              "Next Threshold" (-> ke :key-event/next-threshold threshold->threshold-view)}]
-             [:div
-              [:div label]
-              [:div val]]
-             #_[:tr [:td label] [:td val]])]))]]))
+        [:<>
+         (when (#{:inception :rotation} (:key-event/type ke))
+           [:div.ke-info
+            (for [[label val] {"Keys"           (-> ke :key-event/signing-keys str)
+                               "Threshold"      (-> ke :key-event/threshold threshold->threshold-view)
+                               "Next Keys"      (-> ke :key-event/next-signing-keys str)
+                               "Next Threshold" (-> ke :key-event/next-threshold threshold->threshold-view)}]
+              [:div
+               [:div label]
+               [:div val]]
+              #_[:tr [:td label] [:td val]])])
+         (when-let [acdcs (some->> ke :key-event/anchors (filter :acdc/schema) not-empty)]
+           (for [acdc acdcs]
+             (acdc-view acdc)))])]]))
 
 (defc message-view < rum/reactive
   [my-aid-topic-path topic-path {:feed-item/keys [kind data proposal text creator idx reactions from-event] :as feed-item}]
@@ -326,20 +374,30 @@
                               :member-aid-info/creator->member-aid-info (get (-> dat second)) :member-aid-info/alias)
                       "Device")
                   (-> dat first (= :aid))
-                  (or (rum/react (rum/cursor ac/*aid->aid-name (-> dat first)))
+                  (or (rum/react (rum/cursor ac/*aid#->aid-name (-> dat first)))
                       "grID")
                   :else
                   "???")))]]
 
+      :acdc-presentation
+      (let [acdc (:feed-item/acdc feed-item)]
+        [:div.message (merge-attr-maps (hga-inspector/inspectable from-event)
+                                       {:key   idx
+                                        :class [(when (keyword? creator) (str "creator-" (name creator)))
+                                                (when (= creator my-creator) "from-me")]})
+         [:div.message-content
+          (acdc-view acdc)]])
+
       :proposal
-      (let [[_ kind {:acdc/keys [schema] :as acdc}] proposal
+      (let [[kind {:acdc/keys [schema] :as acdc}] proposal
             issuer-aid#                             (-> acdc :acdc/issuer)
             issuee-aid#                             (-> acdc :acdc/attribute :issuee)
             issuer-name                             (rum/react (rum/cursor ac/*aid#->aid-name issuer-aid#))
             issuee-name                             (rum/react (rum/cursor ac/*aid#->aid-name issuee-aid#))]
-        [:div.message {:key   idx
-                       :class [(when (keyword? creator) (str "creator-" (name creator)))
-                               (when (= creator my-creator) "from-me")]}
+        (l feed-item)
+        [:div.message.reactable {:key   idx
+                                 :class [(when (keyword? creator) (str "creator-" (name creator)))
+                                         (when (= creator my-creator) "from-me")]}
          [:div.message-content
           (case kind
             :incept
@@ -355,9 +413,10 @@
               :acdc-le
               (str "Issue LE credential to " issuee-name "?")))]
          (let [possible-reactions (if (= :incept kind)
-                                    [[:agree #(do (at/add-event! topic-path {:event/tx proposal})
-                                                  (ac/add-init-control-event! topic-path))]]
-                                    [[:agree #(at/add-event! topic-path {:event/tx proposal})]])]
+                                    [[:propose #(do (at/add-event! topic-path {:event/tx [:propose proposal]})
+                                                    (ac/add-init-control-event! topic-path))]]
+                                    [[:propose #(at/add-event! topic-path {:event/tx [:propose proposal]})]
+                                     [:dispose #(at/add-event! topic-path {:event/tx [:dispose proposal]})]])]
            [:div.message-reactions
             (for [[reaction-kind on-react] possible-reactions
                   :let                     [reactors   (get reactions reaction-kind)
@@ -367,7 +426,9 @@
                                                       (cond-> {:class    [(when i-reacted? "i-reacted")]
                                                                :key      (str reaction-kind)}
                                                         (not i-reacted?) (assoc :on-click #(on-react))))
-               (hga-icons/icon :regular :circle-check :color "white" :size "sm")
+               (case reaction-kind
+                 :propose (hga-icons/icon :regular :circle-check :color "white" :size "sm")
+                 :dispose (hga-icons/icon :regular :circle-xmark :color "white" :size "sm"))
                (when (>= (count reactors) 1)
                  [:span.message-reaction-count (count reactors)])])])])
 
@@ -378,7 +439,6 @@
                              :font-family :monospace}}
        (with-out-str (clojure.pprint/pprint feed-item))])))
 
-#_(l @at/*topic->subjective-db)
 (defc messages-view < rum/reactive
   [my-aid-topic-path topic-path]
   (let [feed (:feed (rum/react (rum/cursor atv/*topic-path->viz-subjective-db topic-path)))]
@@ -393,55 +453,27 @@
   (and (= (.-key dom-event) "Enter")
        (.-ctrlKey dom-event)))
 
-#_
-(defc issuee-actions < rum/reactive
+(defc issue-actions < rum/reactive
   [topic]
-  (when-let* [issuer-aid-topic               (l (rum/react as/*selected-my-aid-topic))
-              issuer-aid-topic-tip-taped     (l ((rum/react as/*topic->tip-taped) issuer-aid-topic))
-              issuer-aid                     (l (-> (l issuer-aid-topic-tip-taped) ac/evt->?ke-icp))
-              issuee-aid                     (some-> topic
-                                                     (get :member-aid->did-peers)
-                                                     (->> (some (fn [[member-aid]] ;; works correctly only on 1 other-aid member
-                                                                  (when (not (hash= member-aid issuer-aid))
-                                                                    member-aid)))))]
+  (when-letl* [issuer-aid-topic-path      (rum/react ac/*selected-my-aid-topic-path)
+               issuer-aid-topic-tip-taped ((rum/react as/*topic-path->tip-taped) issuer-aid-topic-path)
+               issuer-aid                 (-> issuer-aid-topic-tip-taped ac/evt->?ke-icp)
+               issuee-aid                 (some-> topic
+                                                  (get :member-aid->did-peers)
+                                                  (->> (some (fn [[member-aid]] ;; works correctly only on 1 other-aid member
+                                                               (when (not (hash= member-aid issuer-aid))
+                                                                 member-aid)))))]
     #_(let [?issuer-aid-attributed-acdc-le (->> (rum/react (rum/cursor ac/*aid->attributed-acdcs issuer-aid))
                                                 (some (fn [acdc] (when (= ::ac/acdc-le (:acdc/schema acdc))
                                                                    acdc))))])
     [:<>
      [:button.action {:on-click #(ac/issue-acdc-qvi! issuer-aid-topic issuer-aid issuee-aid)}
       "Issue QVI"]
-     (when-let [issuer-aid-attributed-acdc-qvi (l (->> (rum/react (rum/cursor acv/*aid->attributed-acdcs issuer-aid))
-                                                       (some (fn [acdc] (when (= ::ac/acdc-qvi (:acdc/schema acdc))
-                                                                          acdc)))))]
+     (when-letl* [issuer-aid-attributed-acdc-qvi (->> (rum/react (rum/cursor acv/*aid->attributed-acdcs issuer-aid))
+                                                      (some (fn [acdc] (when (= ::ac/acdc-qvi (:acdc/schema acdc))
+                                                                         acdc))))]
        [:button.action {:on-click #(ac/issue-acdc-le! issuer-aid-topic issuer-aid issuee-aid issuer-aid-attributed-acdc-qvi)}
         "Issue LE"])]))
-
-#_
-(defcs promote-to-id-form-dialog < (rum/local "" ::*id-name)
-  [{::keys [*opened? *id-name]} topic open? on-close]
-  (dialog {:open        open?
-           :on-close    on-close
-           "PaperProps" {"component" "form"
-                         "onSubmit"  (fn [e]
-                                       (.preventDefault e)
-                                       (on-close)
-                                       (at/set-topic-name-event! topic @*id-name)
-                                       (ac/add-init-control-event! topic))}}
-          (dialog-title "Promote to ID")
-          (dialog-content
-           (text-field {:auto-focus true
-                        :margin     "dense"
-                        :id         "id-name"
-                        :name       "Name"
-                        :label      "ID Name"
-                        :full-width true
-                        :variant    "standard"
-                        :on-change  #(reset! *id-name (-> % .-target .-value))})
-           (dialog-actions
-            (button {:on-click on-close} "Nevermind")
-            (button {:type     "submit"
-                     :disabled (empty? @*id-name)}
-                    "Promote")))))
 
 (defcs propose-join-invite-dialog < rum/reactive
   [{::keys [*opened? *id-name]} topic-path open? on-close]
@@ -458,11 +490,78 @@
                    (aa/aid#-view contact-aid# {:on-click #(do (on-close)
                                                               (ac/propose-issue-acdc-join-invite! topic-path my-aid# contact-aid#))})))]))))
 
+(defcs issue-credential-dialog < rum/reactive  (rum/local nil ::*acdc-kind) (rum/local nil ::*issuee#) (rum/local "" ::*lei)
+  [{::keys [*opened? *id-name *acdc-kind *issuee# *lei]} topic-path open? on-close]
+  (let [my-aid#      (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
+        my-aid-name  (rum/react (rum/cursor ac/*aid#->aid-name my-aid#))
+        ?my-acdc-qvi (->> (rum/react (rum/cursor acv/*aid#->attributed-acdcs my-aid#))
+                          (some (fn [acdc] (when (= :acdc-qvi (:acdc/schema acdc))
+                                             acdc))))
+        issuee#      @*issuee#
+        acdc-kind    @*acdc-kind
+        lei          @*lei]
+    (js/console.log (rum/react acv/*aid#->attributed-acdcs))
+    (dialog {:open     open?
+             :on-close on-close}
+            (dialog-title "Propose Issue Credential")
+            (dialog-content
+              (box {:margin-top "10px"}
+                (form-control {:full-width true}
+                              (input-label {:id "cred-selector-label"}
+                                           "ACDC")
+                              (select {:label-id  "cred-selector-label"
+                                       :id        "cred-selector"
+                                       :value     acdc-kind
+                                       :label     "ACDC"
+                                       :on-change #(reset! *acdc-kind (-> % .-target .-value))}
+                                      (menu-item {:value "qvi"} "QVI")
+                                      (when ?my-acdc-qvi
+                                        (menu-item {:value "vlei"} "vLEI"))))
+
+                (fade {:key     true
+                       :in      (some? acdc-kind)
+                       :timeout {"enter" 400
+                                 "exit"  400}}
+                      (box {:margin-top "10px"}
+                       (if-let [contact-aids# (rum/react (rum/cursor ac/*topic-path->contact-aids# topic-path))]
+                         [:<>
+                          [:div {:style {:margin-bottom "10px"}} my-aid-name "'s contacts:"]
+                          [:div {:style {:display :flex}}
+                           (for [contact-aid# contact-aids#]
+                             (aa/aid#-view contact-aid# {:class    (when (= contact-aid# issuee#) "selected")
+                                                         :on-click #(reset! *issuee# contact-aid#)}))]]
+                         [:div (str my-aid-name " doesn't have a contact to issuee to")])
+
+                       (fade {:key     true
+                              :in      (some? issuee#)
+                              :timeout {"enter" 400
+                                        "exit"  400}}
+                             (box {:margin-top "10px"}
+                              (text-field {:id        "lei-text-field"
+                                           :value     lei
+                                           :label     "LEI"
+                                           :variant   "outlined"
+                                           :on-change #(reset! *lei (-> % .-target .-value))})
+
+                              (let [ready? (and (some? acdc-kind) (some? issuee#) (not-empty lei))]
+                                (fade {:key     true
+                                       :in      (not-empty lei)
+                                       :timeout {"enter" 400
+                                                 "exit"  400}}
+                                      (box {:margin-top "10px"}
+                                           (button {:variant  "contained"
+                                                    :disabled (not ready?)
+                                                    :on-click #(do (case acdc-kind
+                                                                     "qvi"  (ac/propose-issue-acdc-qvi! topic-path my-aid# issuee# lei)
+                                                                     "vlei" (ac/propose-issue-acdc-le! topic-path my-aid# issuee# lei ?my-acdc-qvi))
+                                                                   (on-close))}
+                                                   "Propose to Issue")))))))))))))
+
 (defn add-text-message-event! [text-message]
   (at/add-event! {hg/tx [:text-message {:text-message/content text-message}]}))
 
-(defcs new-text-message-button < rum/reactive (rum/local false ::*actions-shown?) (rum/local false ::*promote-to-id-modal-open?) (rum/local false ::*propose-join-invite-dialog-open?)
-  [{::keys [*actions-shown? *promote-to-id-modal-open? *propose-join-invite-dialog-open?]} my-aid-topic-path topic-path]
+(defcs new-text-message-button < rum/reactive (rum/local false ::*actions-shown?) (rum/local false ::*propose-join-invite-dialog-open?) (rum/local false ::*propose-issue-cred-dialog-open?)
+  [{::keys [*actions-shown? *propose-join-invite-dialog-open? *propose-issue-cred-dialog-open?]} my-aid-topic-path topic-path]
   (let [*new-message (rum/cursor as/*topic-path->new-message topic-path)
         new-message  (or (rum/react *new-message) "")
         can-send?    (not (empty? new-message))
@@ -474,8 +573,8 @@
         contact-topic-path?     (-> (rum/react ac/*contact-topic-paths) (contains? topic-path))
         ]
     [:<>
-     #_(promote-to-id-form-dialog topic @*promote-to-id-modal-open? #(reset! *promote-to-id-modal-open? false))
      (propose-join-invite-dialog topic-path @*propose-join-invite-dialog-open? #(reset! *propose-join-invite-dialog-open? false))
+     (issue-credential-dialog topic-path @*propose-issue-cred-dialog-open? #(reset! *propose-issue-cred-dialog-open? false))
      [:div.new-message-area
       (textarea-autosize {:class        ["message" "from-me" "new"]
                           :key          "new-message"
@@ -518,18 +617,24 @@
                                                                       :on-click      #(ac/add-rotate-control-event! topic-path)}))
                                                 (when (and (> (count my-aid-topic-path) 1)
                                                            (not-empty (rum/react (rum/cursor ac/*topic-path->contact-aids# topic-path))))
-                                                  (speed-dial-action {:key           "join invite"
+                                                  (speed-dial-action {:key           :join-invite
                                                                       :icon          (icon-fingerprint)
                                                                       :tooltip-title "Propose Join Invite"
                                                                       :tooltip-open  true
                                                                       :on-click      #(reset! *propose-join-invite-dialog-open? true)}))
                                                 (when (and group-topic-path? (not init-control-initiated?))
-                                                  (speed-dial-action {:key           "1"
+                                                  (speed-dial-action {:key           :propose-incept-id
                                                                       :icon          (icon-fingerprint)
-                                                                      :tooltip-title "Propose to incept ID"
+                                                                      :tooltip-title "Propose Incept ID"
                                                                       :tooltip-open  true
-                                                                      :on-click      #(do (at/add-event! topic-path {hg/tx [:propose :incept]})
+                                                                      :on-click      #(do (at/add-event! topic-path {hg/tx [:propose [:incept]]})
                                                                                           (ac/add-init-control-event! topic-path))}))
+                                                (when (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
+                                                  (speed-dial-action {:key           :propose-incept-id
+                                                                      :icon          (hga-icons/icon :solid :certificate :color "black")
+                                                                      :tooltip-title "Propose Issue ACDC"
+                                                                      :tooltip-open  true
+                                                                      :on-click      #(reset! *propose-issue-cred-dialog-open? true)}))
                                                 #_
                                                 (when group-topic-path?
                                                   (speed-dial-action {:key           "1"
