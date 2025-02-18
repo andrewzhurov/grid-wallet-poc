@@ -42,7 +42,9 @@
      [:.contact-name {:border-radius "0%"}]]
     [:&.group-aid
      [:.contact-name {:border-radius "25%"}]]
-    [:&.selected-my-aid styles/accent-style-light]
+    [:&.selected-my-aid  styles/accent-style-light
+     [:.contact-name
+      {:transform "scale(1.1)"}]]
     [:&:hover styles/accent-style
      [:.contact-name
       [:.connect-invite {:opacity 1}]]]
@@ -55,7 +57,8 @@
                      :align-items     :center
                      :border          "1px solid gray"
                      :border-radius   "50%"
-                     :background-color "white"}
+                     :background-color "white"
+                     :transition       "0.33s"}
      [:.contact-connectivity {:position      :absolute
                               :top           "0px"
                               :right         "0px"
@@ -295,7 +298,7 @@
        (icons/icon :solid :verified2 :size :xl)])))
 
 (defc my-aid-topic-path-view < rum/reactive
-  {:key-fn hash}
+  {:key-fn (fn [my-aid-topic-path] (hash my-aid-topic-path))}
   [my-aid-topic-path selected?]
   (let [connectivity? (rum/react as/*connected?)
         my-aid#       (rum/react (rum/cursor ac/*topic-path->my-aid# my-aid-topic-path))

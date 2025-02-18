@@ -10,7 +10,7 @@
                                          click-away-listener]]
                    :reload-all)
   (:require [hashgraph.main :as hg]
-            [hashgraph.utils.core :refer [subvecs] :refer-macros [l letl2]]
+            [hashgraph.utils.core :refer [subvecs hash=] :refer-macros [l letl2]]
 
             [app.styles :refer [reg-styles! kind->css shadow0 shadow1 shadow2 shadow3] :as styles]
             [app.state :as as]
@@ -52,12 +52,11 @@
   [selected-my-aid-topic-path selected-topic-path]
   [:div#navbar
    [:div.navbar__my-aid-topic-paths
-    [:div.navbar__my-aid-topic-paths__selected
-     (for [selected-my-aid-topic-path (subvecs selected-my-aid-topic-path)]
-       (contacts/my-aid-topic-path-view selected-my-aid-topic-path true))]
-    [:div.navbar__my-aid-topic-paths__selectable
-     (for [selectable-my-aid-topic-path (rum/react (rum/cursor ac/*topic-path->my-aid-topic-paths selected-my-aid-topic-path))]
-       (contacts/my-aid-topic-path-view selectable-my-aid-topic-path false))]]
+    (let [selected-my-aid-topic-paths   (subvecs selected-my-aid-topic-path)
+          selectable-my-aid-topic-paths (rum/react (rum/cursor ac/*topic-path->my-aid-topic-paths selected-my-aid-topic-path))
+          shown-my-aid-topic-paths      (into selected-my-aid-topic-paths selectable-my-aid-topic-paths)] ;; to make React match keys properly it's one 'for'
+      (for [shown-my-aid-topic-path shown-my-aid-topic-paths]
+        (contacts/my-aid-topic-path-view shown-my-aid-topic-path (hash= shown-my-aid-topic-path selected-my-aid-topic-path))))]
 
    [:div.navbar__interactable-topic-paths
     (contacts/interactable-topic-paths-view selected-my-aid-topic-path)
