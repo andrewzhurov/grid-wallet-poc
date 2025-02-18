@@ -77,10 +77,13 @@ If by the end of block-time at least one reached condition - its final.
 ******* torrent-like?
 **** won't work on loss of a message, p2p will be halted between the two
 ***** Solution: talk when see that sent tip is an ancestor of his event
+** Problem: gossip to consensus has a ton of useless chatter
+"useless" as gossipped stuff does not drive peers closer to consensus.
+*** TODO [#A] prioritize peers-to-send-to by their vote contribution towards next round
 
 * consensus
 ** Note: may not need BFT, only majority approval. I.e., F may be set to 0.
-*** TODO [#A] set F to 0 by default for less events on demo
+*** DONE [#A] set F to 0 by default for less events on demo
 ** TODO [#B] fix votes viz
 ** DONE via stake
 ** IDEA via threshold
