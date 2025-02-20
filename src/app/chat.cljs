@@ -33,7 +33,6 @@
             [garden.selectors :as gs]
             [garden.color :as gc]
             [garden.util :as gu]
-            [garden.util]
             [garden.units :refer [px px- px+] :as gun]
             [garden.arithmetic :as ga]
             [garden.compiler]
@@ -232,14 +231,6 @@
                                                                                    (update-in [:feed-item/reaction->events :dispose] conjs event)))))
      db)))
 
-#_
-(at/reg-subjective-tx-handler!
- :agree
- (fn [{:keys [feed] :as db} {:event/keys [creator]} [_ proposal]]
-   (-> db
-       (update-in [:feed :feed/items (get-in feed [:feed/propose-tx->feed-item-idx proposal]) :feed-item/reactions :agree]
-                  conjs creator))))
-
 (at/reg-subjective-tx-handler!
  :assoc-did-peer
  (fn [{:keys [feed] :as db} {:event/keys [creator] :as event} _]
@@ -272,16 +263,16 @@
 
 
 (defn create-feed-item-of-received-ke [{:keys [received-ke informed-ke] :as db} novel-tip-taped]
-  (letl2 [?latest-received-ke (ac/evt->?ke novel-tip-taped)]
+  (let [?latest-received-ke (ac/evt->?ke novel-tip-taped)]
     (cond-> db
       (not (hash= received-ke ?latest-received-ke)) ;; latest is nil, received is some
       (-> (assoc :received-ke ?latest-received-ke)
           (update-in [:feed :feed/items]
                      (fn [feed-items]
-                       (letl2 [novel-kes< (->> ?latest-received-ke
-                                               (iterate :key-event/prior)
-                                               (take-while #(not (hash= % received-ke)))
-                                               reverse)]
+                       (let [novel-kes< (->> ?latest-received-ke
+                                             (iterate :key-event/prior)
+                                             (take-while #(not (hash= % received-ke)))
+                                             reverse)]
                          (->> novel-kes<
                               (reduce (fn [feed-items-acc novel-ke]
                                         (conjv feed-items-acc
@@ -331,6 +322,10 @@
       (when-let [qvi (-> edge-group :qvi)]
         [:div (acdc-view qvi)])])])
 
+(defc member-aid-info-view [pub-db]
+  [:div
+   ])
+
 (defcs message-ke-view < rum/reactive (rum/local false :*opened?)
   [{:keys [*opened?]} feed-item]
   (let [{:feed-item/keys [ke concluded-by-event concluded-by-event]} feed-item]
@@ -349,6 +344,8 @@
                [:div label]
                [:div val]]
               #_[:tr [:td label] [:td val]])])
+         (when-let [pub-db (some->> ke :key-event/anchors (some :aid/pub-db))]
+           (member-aid-info-view pub-db))
          (when-let [acdcs (some->> ke :key-event/anchors (filter :acdc/schema) not-empty)]
            (for [acdc acdcs]
              (acdc-view acdc)))])]]))
@@ -453,28 +450,6 @@
   (and (= (.-key dom-event) "Enter")
        (.-ctrlKey dom-event)))
 
-(defc issue-actions < rum/reactive
-  [topic]
-  (when-letl* [issuer-aid-topic-path      (rum/react ac/*selected-my-aid-topic-path)
-               issuer-aid-topic-tip-taped ((rum/react as/*topic-path->tip-taped) issuer-aid-topic-path)
-               issuer-aid                 (-> issuer-aid-topic-tip-taped ac/evt->?ke-icp)
-               issuee-aid                 (some-> topic
-                                                  (get :member-aid->did-peers)
-                                                  (->> (some (fn [[member-aid]] ;; works correctly only on 1 other-aid member
-                                                               (when (not (hash= member-aid issuer-aid))
-                                                                 member-aid)))))]
-    #_(let [?issuer-aid-attributed-acdc-le (->> (rum/react (rum/cursor ac/*aid->attributed-acdcs issuer-aid))
-                                                (some (fn [acdc] (when (= ::ac/acdc-le (:acdc/schema acdc))
-                                                                   acdc))))])
-    [:<>
-     [:button.action {:on-click #(ac/issue-acdc-qvi! issuer-aid-topic issuer-aid issuee-aid)}
-      "Issue QVI"]
-     (when-letl* [issuer-aid-attributed-acdc-qvi (->> (rum/react (rum/cursor acv/*aid->attributed-acdcs issuer-aid))
-                                                      (some (fn [acdc] (when (= ::ac/acdc-qvi (:acdc/schema acdc))
-                                                                         acdc))))]
-       [:button.action {:on-click #(ac/issue-acdc-le! issuer-aid-topic issuer-aid issuee-aid issuer-aid-attributed-acdc-qvi)}
-        "Issue LE"])]))
-
 (defcs propose-join-invite-dialog < rum/reactive
   [{::keys [*opened? *id-name]} topic-path open? on-close]
   (let [my-aid#     (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
@@ -500,7 +475,6 @@
         issuee#      @*issuee#
         acdc-kind    @*acdc-kind
         lei          @*lei]
-    (js/console.log (rum/react acv/*aid#->attributed-acdcs))
     (dialog {:open     open?
              :on-close on-close}
             (dialog-title "Propose Issue Credential")
@@ -602,6 +576,7 @@
                                   (add-text-message-event! new-message)
                                   (reset! *new-message ""))}
                     (icon-send)))
+
          (click-away-listener {:on-click-away #(reset! *actions-shown? false)}
                               (fade {:key      false
                                      :in       (not can-send?)
@@ -610,7 +585,7 @@
                                      :on-click #(swap! *actions-shown? not)}
                                     (speed-dial {:key        "button-actions"
                                                  :class      "new-message-button"
-                                                 "ariaLabel" "SpeedDial basic example"
+                                                 "ariaLabel" "Topic actions"
                                                  :icon       (speed-dial-icon)
                                                  :open       @*actions-shown?}
                                                 (when init-control-participated?
@@ -647,30 +622,7 @@
                                                                       :tooltip-title "Add member"
                                                                       :tooltip-open  true
                                                                       :on-click      #(reset! *add-member-dialog-open? true)}))
-                                                #_
-                                                (speed-dial-action {:key           "1"
-                                                                    :icon          (icon-fingerprint)
-                                                                    :tooltip-title "Promote to ID"
-                                                                    :tooltip-open  true
-                                                                    :on-click      #(ac/add-init-control-event! topic-path)}))))])]]
-
-    #_(if can-send?
-        [:div.new-message-button.send-message
-         {:on-click #(do (add-text-message! new-message)
-                         (reset! *new-message ""))}
-         (icons/icon :regular :send :size :2xl)]
-
-        [:div.new-message-button.actions-shower.clean {:class    (when (rum/react *actions-shown?) "shown")
-                                                       :on-click #(swap! *actions-shown? not)}
-         (icons/icon :solid :plus :color "white" :size :lg)
-         [:div.actions
-          (if (-> (rum/react (rum/cursor as/*topic->tip-taped topic))
-                  ac/init-control-initiated?)
-            (my-aid-actions topic)
-            [:<>
-             [:button.action {:on-click #(ac/add-init-control-event! topic)}
-              "Promote to ID"]
-             (issuee-actions topic)])]])))
+                                                )))])]]))
 
 (defc chat-view < rum/static rum/reactive
   [my-aid-topic-path topic-path]
