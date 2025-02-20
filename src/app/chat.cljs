@@ -568,9 +568,13 @@
 
         ;; mixing promote-to-id and issue contexts,
         ;; in promote, there's selected-my-aid-topic, but we want to create a new one - need to check if inception's been instantiated
-        init-control-initiated? (-> (rum/react (rum/cursor as/*topic-path->tip-taped topic-path)) ac/init-control-initiated?)
-        group-topic-path?       (-> (rum/react ac/*group-topic-paths) (contains? topic-path))
-        contact-topic-path?     (-> (rum/react ac/*contact-topic-paths) (contains? topic-path))
+        tip-taped                  (rum/react (rum/cursor as/*topic-path->tip-taped topic-path))
+        init-control-initiated?    (-> tip-taped ac/init-control-initiated?)
+        init-control-participated? (-> tip-taped ac/init-control-participated?)
+        incepted?                  (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
+        device-aid-topic-path?     (= (count my-aid-topic-path) 1)
+        group-topic-path?          (-> (rum/react ac/*group-topic-paths) (contains? topic-path))
+        contact-topic-path?        (-> (rum/react ac/*contact-topic-paths) (contains? topic-path))
         ]
     [:<>
      (propose-join-invite-dialog topic-path @*propose-join-invite-dialog-open? #(reset! *propose-join-invite-dialog-open? false))
@@ -609,13 +613,14 @@
                                                  "ariaLabel" "SpeedDial basic example"
                                                  :icon       (speed-dial-icon)
                                                  :open       @*actions-shown?}
-                                                (when init-control-initiated?
+                                                (when init-control-participated?
                                                   (speed-dial-action {:key           :rotate
                                                                       :icon          (hga-icons/icon :solid :key)
                                                                       :tooltip-title "Rotate key"
                                                                       :tooltip-open  true
                                                                       :on-click      #(ac/add-rotate-control-event! topic-path)}))
-                                                (when (and (> (count my-aid-topic-path) 1)
+                                                (when (and (not device-aid-topic-path?)
+                                                           incepted?
                                                            (not-empty (rum/react (rum/cursor ac/*topic-path->contact-aids# topic-path))))
                                                   (speed-dial-action {:key           :join-invite
                                                                       :icon          (icon-fingerprint)
@@ -629,7 +634,7 @@
                                                                       :tooltip-open  true
                                                                       :on-click      #(do (at/add-event! topic-path {hg/tx [:propose [:incept]]})
                                                                                           (ac/add-init-control-event! topic-path))}))
-                                                (when (rum/react (rum/cursor ac/*topic-path->my-aid# topic-path))
+                                                (when incepted?
                                                   (speed-dial-action {:key           :propose-incept-id
                                                                       :icon          (hga-icons/icon :solid :certificate :color "black")
                                                                       :tooltip-title "Propose Issue ACDC"
