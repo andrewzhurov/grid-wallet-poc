@@ -319,7 +319,7 @@
       (connect-invite-view my-aid#)]]))
 
 (defc contact-topic-path-view < rum/reactive
-  {:key-fn hash}
+  {:key-fn (fn [_ contact-topic-path] (hash contact-topic-path))}
   [my-aid-topic-path contact-topic-path]
   (letl [my-aid#          (rum/react (rum/cursor ac/*topic-path->my-aid# my-aid-topic-path))
          contact-aid#     (first (disj (rum/react (rum/cursor ac/*contact-topic-path->connected-aids# contact-topic-path)) my-aid#))
@@ -337,7 +337,7 @@
       (connect-invite-view contact-aid#)]]))
 
 (defc group-topic-path-view < rum/reactive
-  {:key-fn hash}
+  {:key-fn (fn [_ group-topic-path] (hash group-topic-path))}
   [my-aid-topic-path group-topic-path]
   (let [topic-name (rum/react (rum/cursor as/*topic-path->topic-name group-topic-path))]
     [:div.contact.group {:on-click #(do (reset! as/*selected-topic-path group-topic-path)
