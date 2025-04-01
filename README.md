@@ -53,5 +53,6 @@ Alternatively, you could connect to shadow-cljs server in watch mode via an edit
 
 
 ## License
-- Original code (up to f5383e1): [MIT](LICENSE.md)
-- Modifications/new code: [Apache 2.0](LICENSE-APACHE.md)
+This POC started as a fork of https://github.com/decentralized-identity/didcomm-demo,
+all its code (up to f5383e1, including) is [MIT](LICENSE.md).
+All further commits of this repo is [Apache 2.0](LICENSE-APACHE.md).

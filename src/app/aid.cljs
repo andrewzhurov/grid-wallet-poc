@@ -139,6 +139,8 @@
        (let [seed          (ac/creation-time->seed creation-time)
              member-avatar (cond (= alias "A") hga-avatars/female-avatar
                                  (= alias "B") hga-avatars/male-avatar
+                                 (= alias "C") hga-avatars/female-avatar
+                                 (some-> alias second str (= "2")) hga-avatars/phone
                                  :else         (ac/parent-depth+seed->avatar parent-depth seed))]
          (member-avatar (rgb->css-str color)
                         (rgb->css-str (bake-alpha (assoc color :alpha (/ stake hg/total-stake))))))
