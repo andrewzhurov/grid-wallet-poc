@@ -53,6 +53,7 @@ If by the end of block-time at least one reached condition - its final.
 *** Con: need to have disclosable proof that this grID represents relationship of member/"delegatee" grIDs
 **** still need to anchor data under personal grIDs? If that's where the assets are tracked.
 
+
 * login
 ** TODO [#B] add mock QR code for demo
 ** ways to login into Personal grID
@@ -64,6 +65,12 @@ If by the end of block-time at least one reached condition - its final.
 ***** this will either be interpreted by OS, feeding it to grID Wallet, or open up App Store page if it's not installed
 ****** the case when Device-to-connect is a desktop can be not catered for, as it's unlikely to encounter
 **** fine for demo purposes
+
+
+* mailbox
+** TODO [#B] automatic reconnect
+*** E.g., try on disconnect, then attempt * 10s, capped at 60s, until reconnected
+** TODO [#B] change mailbox
 
 * gossip
 ** Problem: spamming member with enormous grafts
@@ -80,6 +87,7 @@ If by the end of block-time at least one reached condition - its final.
 ** Problem: gossip to consensus has a ton of useless chatter
 "useless" as gossipped stuff does not drive peers closer to consensus.
 *** TODO [#A] prioritize peers-to-send-to by their vote contribution towards next round
+** TODO [#B] Problem: do not spam offline peers, yet collab when they're back online
 
 * consensus
 ** Note: may not need BFT, only majority approval. I.e., F may be set to 0.
@@ -97,12 +105,14 @@ If by the end of block-time at least one reached condition - its final.
 
 
 * feed
-** TODO [#A] viz creds - Join Invite
-** TODO [#A] fix feed item order for newly joined guy (KE items)
+** DONE [#A] viz creds - Join Invite
+** DONE [#A] fix feed item order for newly joined guy (KE items)
+
 * creds
 
 * viz
-** TODO [#B] fix event colors
+** TODO [#C] fix event colors
+** TODO [#C] fix viz breaking, positioning events at 0,0
 
 * how to store forked events?
 ** ref to events directly, event as Map
@@ -252,13 +262,10 @@ So only controlling aids are leaked out, consensus aids are kept private to topi
 * DONE viz information toggles (rounds, witnesses, votes)
 
 * how to color events given we color member aids?
-** gotcha: creator = pub key
-*** TODO creator as pub key
-*** TODO g$ to account for pub key
 ** gotcha: same aid can be a controller under different aids
 ** member-aids+event->controlling-path
 ** aid-to-color+member-aid->color
-** Option1: parent color as blend of children colors
+** DONE Option1: parent color as blend of children colors
 ** Option2: children colors as parent's color
 
 * is there need for a Device AID?
@@ -300,35 +307,37 @@ or <Button: Link Request>          | <Button: Create>
 ******** how's that gonna protect you?
 
 * topic
-** TODO add member
+** DONE add member
 ** TODO consensus threshold tuning
 ** LATER switch consensus-keys to real keys
 ** LATER sign events
 ** LATER check event signatures
 * AID
 ** DONE key rotation
-** TODO add member
+** DONE add member
 ** TODO remove member
-** TODO derive consensus threshold and consensus-keys out of ke
-** TODO avatar & name as anchored data
+** DONE derive consensus threshold out of ke
+** TODO devire consensus keys out of ke
+** DONE anchored name
+** TODO anchored avatar
 ** LATER switch signing-keys and next-signing-keys to real keys
 ** LATER sign ke
-** LATER check ke signatures
+** LATER validate ke signatures
 * ACDC
 ** TODO prettier view of vLEI certificates
 ** TODO hierarchical view of vLEI certificates
 * chat
 ** TODO message creator avatar & name
 ** DONE unreds indicator
-** TODO fix send message button styles
+** DONE fix send message button styles
 * viz
 ** TODO viz in sp tip chunks
-** TODO event creator avatar & name
-** TODO position members by AID creation time
-** TODO move accept-connect-invite & +G to contacts&groups nav
-** TODO Promote to AID action on groups only
-** TODO viz groups as squares
-** TODO viz multisig AIDs as rounded squares
+** DONE event creator avatar & name
+** DONE position members by AID creation time
+** DONE move accept-connect-invite & +G to contacts&groups nav
+** DONE Promote to AID action on groups only
+** DONE viz groups as squares
+** DONE viz multisig AIDs as rounded squares
 
 * fitness of UI libraries
 | Components / UI Library | MUI                    | Base UI                            | Joy UI     |
