@@ -1,122 +1,111 @@
 
 # Table of Contents
 
-1.  [Local-First p2p Collaboration with KERI](#orgb494ef9)
-    1.  [Problems & Approaches](#org356d739)
-        1.  [Who's talking?](#orgf04f3a9)
-        2.  [How do they talk?](#orgba52761)
-        3.  [What they're saying?](#orgf7c962d)
-    2.  [Inspirations](#org731531f)
-    3.  [Components](#org5c78107)
-        1.  [Device AID](#org8495a5b)
-        2.  [AID<->AID connection](#org8dd4cdb)
-        3.  [Communication](#org2f844d8)
-        4.  [Interaction](#org6a763de)
-        5.  [Group formation](#org775bb29)
-    4.  [Related](#org234bf86)
+1.  [Local-First p2p Collaboration with KERI](#orgb33cf73)
+    1.  [Problems & Approaches](#org2b2cc0f)
+        1.  [Who's talking?](#org23f5659)
+        2.  [How do they talk?](#org8935cc0)
+        3.  [What they're saying?](#org78eeb9c)
+    2.  [Inspirations](#org8066512)
+    3.  [Components](#orge3a4329)
+        1.  [Device AID](#orga3d873d)
+        2.  [AID<->AID connection](#orgd0a6404)
+        3.  [Communication](#org467a117)
+        4.  [Interaction](#org007f3ce)
+        5.  [Group formation](#orgc59c645)
+    4.  [Related](#org16dd14a)
 
 
-<a id="orgb494ef9"></a>
+<a id="orgb33cf73"></a>
 
 # Local-First p2p Collaboration with KERI
 
 
-<a id="org356d739"></a>
+<a id="org2b2cc0f"></a>
 
 ## Problems & Approaches
 
 [an example interaction](https://andrewzhurov.github.io/hashgraph/)
 
 
-<a id="orgf04f3a9"></a>
+<a id="org23f5659"></a>
 
 ### Who's talking?
 
-People, jeez.
+People, jeez.  
 ![img](./assets/sha256/00f210de052c252b13a2b41794fdb37de21109ba69c721ab414eecd0434ea6b2.png)
 
 `>` It's meant to be an electronic message.  
 Umm, people can't do that with electronic ones?
 
-`>` No cybors walking around, last time I checked.
+`>` No cybors walking around, last time I checked.  
+Fine, devices talking it is then.  
+![img](./assets/sha256/13dd9e075785e359ced8922100db40e7e5d1119c6e69ca22d19a4a97434cff0a.png)
 
-1.  Fine, devices talking it is then.
+`>` Well, a device there does talk on somebody's behalf, right?  
+Right, there's some AID, say an Alice AID, and she talks from her phone.  
+![img](./assets/sha256/9373dbf87ad590a8307eafd228977e3326b96a77843d35f8dcff95df82aba257.png)
 
-    ![img](./assets/sha256/13dd9e075785e359ced8922100db40e7e5d1119c6e69ca22d19a4a97434cff0a.png)
-    
-    `>` Well, a device there does talk on somebody's behalf, right?
-    
-    1.  Right, there's some AID, say an Alice AID, and she talks from her phone.
-    
-        ![img](./assets/sha256/9373dbf87ad590a8307eafd228977e3326b96a77843d35f8dcff95df82aba257.png)
-        
-        `>` Do you have just one device in use?
-        
-        1.  &#x2026; okay, multiple devices may be talking on behalf of an AID.
-        
-            ![img](./assets/sha256/0260ded838e062c01d4f5800f8fc47c6049ba0c3a82fe0378ec2e4edd208e954.png)
-            
-            `>` Is communication limited to Person<->Person? There are groups/assemblies, orgs, you know..
-            That's no prob., that AID may be a Group AID.
-            Well, you can treat a Personal AID as a Group AID, where Device AIDs are group members.
+`>` Do you have just one device in use?  
+&#x2026; okay, multiple devices may be talking on behalf of an AID.  
+![img](./assets/sha256/0260ded838e062c01d4f5800f8fc47c6049ba0c3a82fe0378ec2e4edd208e954.png)
+
+`>` Is communication limited to Person<->Person? There are groups/assemblies, orgs, you know..  
+That's no prob., that AID may be a Group AID.  
+Well, you can treat a Personal AID as a Group AID, where Device AIDs are group members.
 
 
-<a id="orgba52761"></a>
+<a id="org8935cc0"></a>
 
 ### How do they talk?
 
-Device->Device E2EE message.
-
+Device->Device E2EE message.  
 Both are online, connected p2p.
 
-`>` Does it mean we need to keep a p2p connection open per each communication?
-Sure, why not. Actually, per communication per device in that communication that would be.
-
+`>` Does it mean we need to keep a p2p connection open per each communication?  
+Sure, why not. Actually, per communication per device in that communication that would be.  
 Computers can handle connections per 100+ of DM & group chats, say a 1000. Right? That would be fiiine.
 
-`>` Doesn't p2p channel reveal the two ends talking?
+`>` Doesn't p2p channel reveal the two ends talking?  
 Well, you've got something to hide?
 
-`>` Both devices need to be online in order to deliver a message?
+`>` Both devices need to be online in order to deliver a message?  
+Umm, okay-okay, maybe we can do better..
 
-1.  Umm, okay-okay, maybe we can do better..
+Would a mailbox make you happy?  
+![img](./assets/sha256/560fa67b9c5872f45d06b59f53a4a9f477db5669edf1d87215312e763e5f4f28.png)  
+It won't be able to read your messages. They are E2EE.  
+Just pull them from your devices.
 
-    Would a mailbox make you happy?
-    ![img](./assets/sha256/560fa67b9c5872f45d06b59f53a4a9f477db5669edf1d87215312e763e5f4f28.png)
-    It won't be able to read your messages. They are E2EE.  
-    Just pull them from your devices.
-    
-    `>` So what if it is faulty. I pulled from phone, it dropped the stored message and I can't pull it from my laptop now. How do devices sync?  
-    Well, you could resend it to your personal mailbox.  
-    
-    `>` How would device know that I need to resend to another?
-    Ehh, say it does somehow.
-    
-    `>` And what if it's a Group's mailbox that has a 100 of members?  
-    Would be a bit of overhead then.
-    
-    `>` If I want to send a message to my other device - do I send it to my personal mailbox?  
-    That would be a way.
-    
-    `>` And now I need to keep the mailbox updated on who can pull those messages?  
-    Yup.
-    
-    `>` But still, devices could talk to each other directly, p2p, say they're on the same wifi network?  
-    That would be nice.
-    
-    `>` So it would be nice to exchange messages device-to-device?
-    
-    1.  Yeah, right, perhaps we could keep it simple
-    
-        Mailbox per device then?  
-        ![img](./assets/sha256/3e9d5a32b180383cfb0bdd09da186777306179e0a7b9ee40c60dfffcd214df42.png)
+`>` So what if it is faulty. I pulled from phone, it dropped the stored message and I can't pull it from my laptop now. How do devices sync?  
+Well, you could resend it to your personal mailbox.  
+
+`>` How would device know that I need to resend to another?  
+Ehh, say it does somehow.
+
+`>` And what if it's a Group's mailbox that has a 100 of members?  
+Would be a bit of overhead then.
+
+`>` If I want to send a message to my other device - do I send it to my personal mailbox?  
+That would be a way.
+
+`>` And now I need to keep the mailbox updated on who can pull those messages?  
+Yup.
+
+`>` But still, devices could talk to each other directly, p2p, say they're on the same wifi network?  
+That would be nice.
+
+`>` So it would be nice to exchange messages device-to-device?  
+Yeah, right, perhaps we could keep it simple  
+Mailbox per device then?  
+![img](./assets/sha256/3e9d5a32b180383cfb0bdd09da186777306179e0a7b9ee40c60dfffcd214df42.png)
 
 
-<a id="orgf7c962d"></a>
+<a id="org78eeb9c"></a>
 
 ### What they're saying?
 
-The content is use-case specific, be it:
+The content is use-case specific, be it:  
 
 -   Plain information exchange - e.g., a chat with receipts.
 -   A CRDT - eventually consistent text document. Composition of personal takes.
@@ -129,7 +118,7 @@ Do whatever with it - Data FTW. (Unless it's too much of it)
 ![img](./assets/sha256/ad5655b1a817a1d2bcd2a8fe330a3c43fa90bc256ea8743c44c6608290093572.png)
 
 
-<a id="org731531f"></a>
+<a id="org8066512"></a>
 
 ## Inspirations
 
@@ -138,19 +127,19 @@ Do whatever with it - Data FTW. (Unless it's too much of it)
 [A Grassroots Architecture to Supplant Global Digital Platforms by a Global Digital Democracy](https://arxiv.org/pdf/2404.13468)  
 
 
-<a id="org5c78107"></a>
+<a id="orge3a4329"></a>
 
 ## Components
 
 
-<a id="org8495a5b"></a>
+<a id="orga3d873d"></a>
 
 ### Device AID
 
 Handy for establishing device->device communication.  
 
 
-<a id="org8dd4cdb"></a>
+<a id="orgd0a6404"></a>
 
 ### AID<->AID connection
 
@@ -201,7 +190,7 @@ A way for two AIDs to establish connection.
     4.  any combination of the above
 
 
-<a id="org2f844d8"></a>
+<a id="org467a117"></a>
 
 ### Communication
 
@@ -244,12 +233,12 @@ A way for two AIDs to establish connection.
 
 3.  DDOS protection
 
-    Requires to form AID->AID relationships and routing context, as in SPAC, authorizing / whitelisting intermediary of another to your intermediary.
+    Requires to form AID->AID relationships and routing context, as in SPAC, authorizing / whitelisting intermediary of another to your intermediary.  
     Given we have devices that exchange messages device->device, there would need to be Device AID -> Device AID relationship and routing context.
 
 4.  Keep it private
 
-    I.e., 3rd-parties and 2nd-parties (mailboxes/intermediaries) do not know source and destination AIDs of a device->device message.
+    I.e., 3rd-parties and 2nd-parties (mailboxes/intermediaries) do not know source and destination AIDs of a device->device message.  
     Can be achieved with [SPAC Triple-Level Nested Protocol](https://github.com/SmithSamuelM/Papers/blob/master/whitepapers/SPAC_Message.md#three-level-nested-protocol) or a DIDComm mailbox registered on did:peer of a new communication key.
 
 5.  N-wise/group communication
@@ -260,21 +249,21 @@ A way for two AIDs to establish connection.
     
         1.  Cordial Dissemination
         
-            ![img](./assets/sha256/d218543673122397b873c350510de9d24c3f98230cb623ae5ae04d341f2ffb14.png)
-            Where one tells another messages it knows that another needs and, to the best of one's knowledge, does not have.
-            This approach is also mentioned as the core of Battery-efficient gossip protocol in [Optimizing Gossiping for Asynchronous Fault-Prone IoT Networks With Memory and Battery Constraints](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10379066).
+            ![img](./assets/sha256/d218543673122397b873c350510de9d24c3f98230cb623ae5ae04d341f2ffb14.png)  
+            Where one tells another messages it knows that another needs and, to the best of one's knowledge, does not have.  
+            This approach is also mentioned as the core of Battery-efficient gossip protocol in [Optimizing Gossiping for Asynchronous Fault-Prone IoT Networks With Memory and Battery Constraints](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10379066).  
             
             1.  Could benefit from Simple KRAM to drop old messages
             
-                Given any newer message is guaranteed to be more useful that an older one.
+                Given any newer message is guaranteed to be more useful that an older one.  
                 And communication is not limited to ping-pong.
 
 
-<a id="org6a763de"></a>
+<a id="org007f3ce"></a>
 
 ### Interaction
 
-I.e., Topic of a conversation, interaction context.
+I.e., Topic of a conversation, interaction context.  
 Related: [SPAC Interaction Non-content Metadata](https://github.com/SmithSamuelM/Papers/blob/master/whitepapers/SPAC_Message.md#interaction-non-content-metadata).
 
 1.  Events
@@ -288,8 +277,8 @@ Related: [SPAC Interaction Non-content Metadata](https://github.com/SmithSamuelM
         1.  Protection from message drop, reorder and replay attacks
         
             ![img](./assets/sha256/00b2e87d3cf91883977cec47ad53ed1b880f10b8566862bba46e278c7a09dae6.png)
-            ![img](./assets/sha256/340ca46e09cd25ba8c6106c09ae445e09e9ce257b8d17f2f5a44116282986ee1.png)
-            I.e., message is delivered with the exact causal past in which it's been created, and delivery is idempotent.
+            ![img](./assets/sha256/340ca46e09cd25ba8c6106c09ae445e09e9ce257b8d17f2f5a44116282986ee1.png)  
+            I.e., message is delivered with the exact causal past in which it's been created, and delivery is idempotent.  
             Hash-linking to prior events gives us that.
         
         2.  Virtual blockchain per creator
@@ -314,22 +303,22 @@ Related: [SPAC Interaction Non-content Metadata](https://github.com/SmithSamuelM
 
 3.  Interaction ID (IID)
 
-    Hash of the first Event of Interaction.
-    Handy as a hint to a recipient of a message, so it is able to lookup the interaction it belongs to.
-    Is not a part of an Event.
+    Hash of the first Event of Interaction.  
+    Handy as a hint to a recipient of a message, so it is able to lookup the interaction it belongs to.  
+    Is not a part of an Event.  
     
     1.  Threaded Interactions
     
-        As been discussed in DIDComm community, there may be use-case for starting a "threaded" interaction,
-        where IID is a non-first Event of another Interaction.
-        E.g., "place an order" interaction between customer<->shop may thread to "confirm payment" between customer<->payment system.
+        As been discussed in DIDComm community, there may be use-case for starting a "threaded" interaction,  
+        where IID is a non-first Event of another Interaction.  
+        E.g., "place an order" interaction between customer<->shop may thread to "confirm payment" between customer<->payment system.  
         However, this feature would benefit from more thought put into it.
 
 4.  Interaction Context as Replicated Database
 
-    Management of permitted participants would benefit from being synced across current participants.
-    One approach to have it is treat Merkle-DAG of events as a replicated database. Akin to OrbitDB.
-    It does lack finality though. But fret not, with a consensus algo atop, as f(event), we can get that - a distributed ledger.
+    Management of permitted participants would benefit from being synced across current participants.  
+    One approach to have it is treat Merkle-DAG of events as a replicated database. Akin to OrbitDB.  
+    It does lack finality though. But fret not, with a consensus algo atop, as f(event), we can get that - a distributed ledger.  
     Then membership, and other important information, can be made consensual, as agreed upon members. More on that later, in Consensual Issuance of KEs.
 
 5.  Compact/prune communication history
@@ -351,7 +340,7 @@ Related: [SPAC Interaction Non-content Metadata](https://github.com/SmithSamuelM
     [Blocklace](https://arxiv.org/abs/2402.08068)
 
 
-<a id="org775bb29"></a>
+<a id="orgc59c645"></a>
 
 ### Group formation
 
@@ -367,24 +356,24 @@ As in your favorite text messenger, one may decide to form a group. Nothing fanc
     1.  Dynamic group membership
     
         E.g., add a new Device AID as member of Personal AID. I.e., login
-        ![img](./assets/sha256/92ab956b253d7ff9f720dc0724fa1facbbacee53015533c343a45ff47e9b41b8.png)
+        ![img](./assets/sha256/92ab956b253d7ff9f720dc0724fa1facbbacee53015533c343a45ff47e9b41b8.png)  
         E.g., add Carol AID to (presently) Alice+Bob Group
         
         1.  Communication sync to a newly added device
         
-            Such as DMs, Group communication. As in your favorite messenger.
+            Such as DMs, Group communication. As in your favorite messenger.  
             E.g., were Alice be chatting with Bob, when she adds her phone to Alice AID - she'd expect DM history to be synced.
         
         2.  Collaboration from a newly added device
         
-            E.g., Alice would expect to be able to participate from her newly added phone in any collaboration she's in.
+            E.g., Alice would expect to be able to participate from her newly added phone in any collaboration she's in.  
             Such as write a DM to Bob, or create a message in Alice+Bob+Carol (ABC) Group.
 
 2.  Group AID formation
 
     Where Personal AID can be seen as a special case of Group AID, controlled by Device AIDs of a person.
     
-    Given we have a Group, its members may decide to form and manage Group AID,
+    Given we have a Group, its members may decide to form and manage Group AID,  
     now using this Group's collaboration Topic for group management events, alongside the usual text messaging.
     
     We can see Group AID as a Child AID of Parent AIDs (those that collaborate on its management).
@@ -402,18 +391,18 @@ As in your favorite text messenger, one may decide to form a group. Nothing fanc
     
     2.  Parent AID's thresholds carried as is
     
-        I.e., group member's threshold is taken as is.
-        Seems to be a handy default.
-        Alice sets her personal threshold and any collaboration she embarks on, e.g., jointly controlling with Bob and Carol ABC Group AID uses that threshold, prepended by weight, as agreed upon them.
-        E.g., 1/2 for each member.
-        As described in
-        [Fractionally weighted threshold](https://github.com/trustoverip/tswg-keri-specification/issues/122)
-        [Nested threshold (proposal)](https://github.com/trustoverip/tswg-keri-specification/issues/216)
+        I.e., group member's threshold is taken as is.  
+        Seems to be a handy default.  
+        Alice sets her personal threshold and any collaboration she embarks on, e.g., jointly controlling with Bob and Carol ABC Group AID uses that threshold, prepended by weight, as agreed upon them.  
+        E.g., 1/2 for each member.  
+        As described in  
+        [Fractionally weighted threshold](https://github.com/trustoverip/tswg-keri-specification/issues/122)  
+        [Nested threshold (proposal)](https://github.com/trustoverip/tswg-keri-specification/issues/216)  
     
     3.  Disclosable membership
     
-        This may be useful in the enterprise world, where company wants to take responsibility for actions of its employees / spare them from personal responsibility.
-        Though in this use-case^ could be achieved by creating context-specific AIDs, e.g., an Employee AID of that company.
+        This may be useful in the enterprise world, where company wants to take responsibility for actions of its employees / spare them from personal responsibility.  
+        Though in this use-case^ could be achieved by creating context-specific AIDs, e.g., an Employee AID of that company.  
         But in general seems valuable to have it hidden by default & disclosable at will.
         
         Could be done by anchoring Membership Info ACDC on KE Rot. As described in [KAGI](https://github.com/WebOfTrust/keripy/discussions/934).
@@ -424,46 +413,46 @@ As in your favorite text messenger, one may decide to form a group. Nothing fanc
     
     4.  Consensual Issuance of KEs
     
-        Any KE to be signed is consensual, sparing from internal inconsistency and/or external inconsistency (duplicity).
-        I.e., supermajority-based consensus.
-        Where supermajority is any greater than `(N+F)/2`.
-        Where `N` is the amount of participating nodes (which can be generalized to stake).
-        Where `F` is the amount of faulty nodes we wish to tolerate.
+        Any KE to be signed is consensual, sparing from internal inconsistency and/or external inconsistency (duplicity).  
+        I.e., supermajority-based consensus.  
+        Where supermajority is any greater than `(N+F)/2`.  
+        Where `N` is the amount of participating nodes (which can be generalized to stake).  
+        Where `F` is the amount of faulty nodes we wish to tolerate.  
         Given `F` is 0, supermajority = majority, 1/2.
         
         1.  algos
         
-            [Hashgraph](https://www.swirlds.com/downloads/SWIRLDS-TR-2016-01.pdf)
-                      [viz](https://andrewzhurov.github.io/hashgraph/)
-            [Cordial Miners](https://arxiv.org/pdf/2205.09174)
-            [Morpheus Consensus](https://arxiv.org/pdf/2502.08465) - adapts to tx/s loads, has a low-throughtput low-latency mode.
-            & a ton more.
-            DAG-based consensus algos are all the rage nowadays. ~ Ehud Shapiro
+            [Hashgraph](https://www.swirlds.com/downloads/SWIRLDS-TR-2016-01.pdf)  
+                      [viz](https://andrewzhurov.github.io/hashgraph/)  
+            [Cordial Miners](https://arxiv.org/pdf/2205.09174)  
+            [Morpheus Consensus](https://arxiv.org/pdf/2502.08465) - adapts to tx/s loads, has a low-throughtput low-latency mode.  
+            & a ton more.  
+            DAG-based consensus algos are all the rage nowadays. ~ Ehud Shapiro  
     
     5.  Tell your friends your novel KEs
     
-        This protects them from accepting messages signed with old keys.
-        & They know which version is to stick with, will there be duplicity.
+        This protects them from accepting messages signed with old keys.  
+        & They know which version is to stick with, will there be duplicity.  
         
         Were you include membership information alongside it, then we can have
         
         1.  Control propagation Parent AID -> Child AID
         
-            E.g., were ABC Group collaborate on maintaining an ABC AID, then the newly added to A device eventually ends up in ABC.
-            E.g., Alice adds new device A3
-                  -> device's key is in KE Rot of Alice AID
-                  -> Alice informs of control/membership change ABC Group
-                  -> members known to trust/accept messages from A3 and sync to it
-                  -> somebody syncs to A3
-                  -> A3 provides keys for ABC
-                  -> members of ABC unblind keys and issues KE Rot to let it in.
+            E.g., were ABC Group collaborate on maintaining an ABC AID, then the newly added to A device eventually ends up in ABC.  
+            E.g., Alice adds new device A3  
+                  -> device's key is in KE Rot of Alice AID  
+                  -> Alice informs of control/membership change ABC Group  
+                  -> members known to trust/accept messages from A3 and sync to it  
+                  -> somebody syncs to A3  
+                  -> A3 provides keys for ABC  
+                  -> members of ABC unblind keys and issues KE Rot to let it in.  
                   Now Alice, in order to cast vote in ABC (e.g., to issue an ACDC), can MFA with her device.
     
     6.  Group Issuance
     
         1.  Allow for long-lasting issuance processes
         
-            This, in turn, leads us to the possibility of multiple issuances being considered by the group at the same time.
+            This, in turn, leads us to the possibility of multiple issuances being considered by the group at the same time.  
             Thus, we'd likely also want to
             
             1.  Persist collected votes
@@ -476,56 +465,56 @@ As in your favorite text messenger, one may decide to form a group. Nothing fanc
             
             2.  Perhaps, terminated manually when desired
             
-                As automatic termination seems only user-desired if explicitly set by the user.
-                E.g., you would not like to see "your cart is gonna be emptied in X hours".
+                As automatic termination seems only user-desired if explicitly set by the user.  
+                E.g., you would not like to see "your cart is gonna be emptied in X hours".  
                 E.g., who enjoys seeing Discorse topics that's been "automatically closed due to inactivity"?
         
         2.  Designated issuers
         
-            For a Group multi-sig AID it may be cumbersome to require MFA / threshold satisficing amount of votes collected in order to issue an ACDC, or do some other action.
-            For that, that Group could designate a responsible for such an action representative. Say Alice, Bob and Carol agree that Alice can single-handedly issue credentials for the next week.
-            And so while the Group's threshold is [1/2, 1/2, 1/2], we can think of there being an action-specific threshold of [1/1, 0/1, 0/1]. Could be done in some other way.
-            The point here is that, while a controlling threshold as an action authorization is a nice default, authZ of an action likely would need to be user-configurable, ideally programmable. (as mentioned by a former DIF member)
-            As this authZ may be a reflection of company governance rules / a part of org's digital twin.
-            authZ as "choose a member in charge for action X" or "set threshold for action X" may not be flexible enough.
-            And extending protocol with more powerful / flexible means, say programmable authZ, is a questinable affair.
-            Yet, there's a way to have both programmable authZ and prevent protocol bloat - by leaving it an inner kitchen.
+            For a Group multi-sig AID it may be cumbersome to require MFA / threshold satisficing amount of votes collected in order to issue an ACDC, or do some other action.  
+            For that, that Group could designate a responsible for such an action representative. Say Alice, Bob and Carol agree that Alice can single-handedly issue credentials for the next week.  
+            And so while the Group's threshold is [1/2, 1/2, 1/2], we can think of there being an action-specific threshold of [1/1, 0/1, 0/1]. Could be done in some other way.  
+            The point here is that, while a controlling threshold as an action authorization is a nice default, authZ of an action likely would need to be user-configurable, ideally programmable. (as mentioned by a former DIF member)  
+            As this authZ may be a reflection of company governance rules / a part of org's digital twin.  
+            authZ as "choose a member in charge for action X" or "set threshold for action X" may not be flexible enough.  
+            And extending protocol with more powerful / flexible means, say programmable authZ, is a questinable affair.  
+            Yet, there's a way to have both programmable authZ and prevent protocol bloat - by leaving it an inner kitchen.  
             
-            Okay, and how does this authZ validation will look like?
+            Okay, and how does this authZ validation will look like?  
             Can be a "smartcontract" - a function that runs after a tx, takes `db`, return `db`. In our case it would run arbitrary authZ checks and may mark some of the proposed ACDCs as authZed.
             
-            But how does a KE gets created if, say, an authorized Alice decides to issue an ACDC? Given her control weight is 1/2, which is not enough.
-            As agreed by the group, her decision is deemed authoritative, so ACDC issuance is considered authzorized.
+            But how does a KE gets created if, say, an authorized Alice decides to issue an ACDC? Given her control weight is 1/2, which is not enough.  
+            As agreed by the group, her decision is deemed authoritative, so ACDC issuance is considered authzorized.  
             Authorized to-be-issued ACDCs get included in the next KE (one may be created for them), the usual way - yet another "smartcontract".
             
-            By keeping authZ an inner kitchen, to outsiders it looks as though an action been performed the usual way, with consent from everybody / group issuance.
-            Whether this is a pro or a con is unclear.
+            By keeping authZ an inner kitchen, to outsiders it looks as though an action been performed the usual way, with consent from everybody / group issuance.  
+            Whether this is a pro or a con is unclear.  
             
-            Since authZ is validated by group members:
+            Since authZ is validated by group members:  
             
             -   no authZ validation cost for outsiders
             -   only group members' software needs to support it
             -   trivially programmable the usual way, as a "smartcontract" - no extra scaffolding required
             -   can be made "loadable", so users can define behaviour at "run-time"
             
-            Cons:
+            Cons:  
             
             -   requires devices of some of the other group members to be online in order to auto-sign KE
             -   requires group member's software to support 1) consensual order of events 2) smartcontracts
             
-            Alternative:
-            This problem has been mentioned in KAGI. An approach of having a dedicated agent AID has been described.
-            The fact that there's a designated issuer / representative AID is made known to issuee (and may be known to public?).
+            Alternative:  
+            This problem has been mentioned in KAGI. An approach of having a dedicated agent AID has been described.  
+            The fact that there's a designated issuer / representative AID is made known to issuee (and may be known to public?).  
             
-            It has a pro of not requiring other members' signatures.
-            But it does add some complexity for issuer and issuee implementation to support such mediated issuance process,
+            It has a pro of not requiring other members' signatures.  
+            But it does add some complexity for issuer and issuee implementation to support such mediated issuance process,  
             ain't inner kitcen to which the other party can happily stay oblivious.
 
 
-<a id="org234bf86"></a>
+<a id="org16dd14a"></a>
 
 ## Related
 
-[KAGI](https://github.com/WebOfTrust/keripy/discussions/934)
+[KAGI](https://github.com/WebOfTrust/keripy/discussions/934)  
 Prior thoughts on how devices could collaborate - [Thread sync with gossip-about-gossip and Cordial Dissemination](https://github.com/decentralized-identity/didcomm-messaging/issues/456)
 
