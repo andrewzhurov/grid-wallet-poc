@@ -5,7 +5,7 @@
 *** Who's talking?
 
 People, jeez.
-[[~/notes/org-roam/store/sha256/00f210de052c252b13a2b41794fdb37de21109ba69c721ab414eecd0434ea6b2.png]]
+[[./assets/sha256/00f210de052c252b13a2b41794fdb37de21109ba69c721ab414eecd0434ea6b2.png]]
 
 
 > It's meant to be an electronic message.
@@ -13,18 +13,17 @@ Umm, people can't do that with electronic ones?
 
 > No cybors walking around, last time I checked.
 **** Fine, devices talking it is then.
-
-[[~/notes/org-roam/store/sha256/13dd9e075785e359ced8922100db40e7e5d1119c6e69ca22d19a4a97434cff0a.png]]
+[[./assets/sha256/13dd9e075785e359ced8922100db40e7e5d1119c6e69ca22d19a4a97434cff0a.png]]
 
 > Well, a device there does talk on somebody's behalf, right?
 ***** Right, there's some AID, say an Alice AID, and she talks from her phone.
 
-[[~/notes/org-roam/store/sha256/9373dbf87ad590a8307eafd228977e3326b96a77843d35f8dcff95df82aba257.png]]
+[[./assets/sha256/9373dbf87ad590a8307eafd228977e3326b96a77843d35f8dcff95df82aba257.png]]
 
 > Do you have just one device in use?
 ****** ... okay, multiple devices may be talking on behalf of an AID.
 
-[[~/notes/org-roam/store/sha256/0260ded838e062c01d4f5800f8fc47c6049ba0c3a82fe0378ec2e4edd208e954.png]]
+[[./assets/sha256/0260ded838e062c01d4f5800f8fc47c6049ba0c3a82fe0378ec2e4edd208e954.png]]
 
 > Is communication limited to Person<->Person? There are groups/assemblies, orgs, you know..
 That's no prob., that AID may be a Group AID.
@@ -47,7 +46,7 @@ Well, you've got something to hide?
 **** Umm, okay-okay, maybe we can do better..
 
 Would a mailbox make you happy?
-[[~/notes/org-roam/store/sha256/560fa67b9c5872f45d06b59f53a4a9f477db5669edf1d87215312e763e5f4f28.png]]
+[[./assets/sha256/560fa67b9c5872f45d06b59f53a4a9f477db5669edf1d87215312e763e5f4f28.png]]
 It won't be able to read your messages. That are E2EE.
 Just pull them from your devices.
 
@@ -70,7 +69,7 @@ That would be nice.
 > So it would be nice to exchange messages device-to-device?
 ***** Yeah, right, perhaps we could keep it simple
 Mailbox per device then?
-[[~/notes/org-roam/store/sha256/3e9d5a32b180383cfb0bdd09da186777306179e0a7b9ee40c60dfffcd214df42.png]]
+[[./assets/sha256/3e9d5a32b180383cfb0bdd09da186777306179e0a7b9ee40c60dfffcd214df42.png]]
 
 *** What they're saying?
 The content is use-case specific, be it:
@@ -82,7 +81,7 @@ However, causal metadata is use-case agnostic.
 In this sense, they gossip about gossip, building a Merkle-DAG of communication / Blocklace / Hashgraph.
 Simply capture what happens in a distributed system.
 Do whatever with it - Data FTW. (Unless it's too much of it)
-[[~/notes/org-roam/store/sha256/ad5655b1a817a1d2bcd2a8fe330a3c43fa90bc256ea8743c44c6608290093572.png]]
+[[./assets/sha256/ad5655b1a817a1d2bcd2a8fe330a3c43fa90bc256ea8743c44c6608290093572.png]]
 
 ** Inspirations
 [[https://arxiv.org/pdf/1510.08473.pdf][A Certain Tendency Of The Database Community]]
@@ -100,7 +99,7 @@ A way for two AIDs to establish connection.
 **** Options
 ***** Scan QR-code
 As in Telegram, WhatsApp, etc.
-[[~/notes/org-roam/store/sha256/71aee47be555aac16afc17e8b8a8384c955f1ec071d45722919f501d8a99ebec.png]]
+[[./assets/sha256/71aee47be555aac16afc17e8b8a8384c955f1ec071d45722919f501d8a99ebec.png]]
 
 ***** Click on a connect invite link
 Of form ~keri:connect-invite:<base64-encoded-invite>~.
@@ -133,8 +132,7 @@ Were A, B, C know of friendships among them, A could accept DM or friend request
 
 *** Communication
 **** Devices are the ones who do the talking
-[[~/notes/org-roam/store/sha256/16776a1a278cd8d5122f3ffcb325e36b7cfee0082e37eb18cc0a0653d4c3cf75.png]]
-[[~/notes/org-roam/store/sha256/ca90c17704b25368df617ed5b942774836ed577a1a24e731687e417176a0f15d.png]]
+[[./assets/sha256/ca90c17704b25368df617ed5b942774836ed577a1a24e731687e417176a0f15d.png]]
 I.e., ability for a controller to create and send message from a device within an AID<->AID communication.
 E.g., Alice sends from her phone to Bob a text message, without the need to approve it from her laptop / collect enough sigs to satisfy threshold.
 E.g., Alice sends from her phone to Bob a newly issued ACDC.
@@ -155,7 +153,7 @@ One should be able to send a message at any time, without the other being online
 I.e., we need some sort of mailbox / intermediary.
 Could be a mailbox per AID or per device of an AID.
 
-[[~/notes/org-roam/store/sha256/9e275ff8e05faa6e0f7e5519b8f3c96d2b368c384cfbf1d567dae32f934aba02.png]]
+[[./assets/sha256/9e275ff8e05faa6e0f7e5519b8f3c96d2b368c384cfbf1d567dae32f934aba02.png]]
 
 ***** Ideally, without dependence on witnesses for communication
 As witnesses is an optional feature, and it seems out-of-scope for them. They're job is to back your KEL to protect you from duplicity.
@@ -177,7 +175,7 @@ Permissioned topics naturally allow for that. As seen in OrbitDB, Hashgraph.
 
 ***** Gossip among members
 ****** Cordial Dissemination
-[[~/notes/org-roam/store/sha256/d218543673122397b873c350510de9d24c3f98230cb623ae5ae04d341f2ffb14.png]]
+[[./assets/sha256/d218543673122397b873c350510de9d24c3f98230cb623ae5ae04d341f2ffb14.png]]
 Where one tells another messages it knows that another needs and, to the best of one's knowledge, does not have.
 This approach is also mentioned as the core of Battery-efficient gossip protocol in [[https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10379066][Optimizing Gossiping for Asynchronous Fault-Prone IoT Networks With Memory and Battery Constraints]].
 
@@ -196,8 +194,8 @@ Member's contributions within a Topic are captured as Events.
 Event comes with causal past baked in, as hashes to some prior events, e.g., forward extremities known by creator at the moment of creation.
 
 ****** Protection from message drop, reorder and replay attacks
-[[~/notes/org-roam/store/sha256/00b2e87d3cf91883977cec47ad53ed1b880f10b8566862bba46e278c7a09dae6.png]]
-[[~/notes/org-roam/store/sha256/340ca46e09cd25ba8c6106c09ae445e09e9ce257b8d17f2f5a44116282986ee1.png]]
+[[./assets/sha256/00b2e87d3cf91883977cec47ad53ed1b880f10b8566862bba46e278c7a09dae6.png]]
+[[./assets/sha256/340ca46e09cd25ba8c6106c09ae445e09e9ce257b8d17f2f5a44116282986ee1.png]]
 I.e., message is delivered with the exact causal past in which it's been created, and delivery is idempotent.
 Hash-linking to prior events gives us that.
 
@@ -259,7 +257,7 @@ E.g., voting according to member's voting power (as been assigned to it).
 
 ***** Dynamic group membership
 E.g., add a new Device AID as member of Personal AID. I.e., login
-[[~/notes/org-roam/store/sha256/92ab956b253d7ff9f720dc0724fa1facbbacee53015533c343a45ff47e9b41b8.png]]
+[[./assets/sha256/92ab956b253d7ff9f720dc0724fa1facbbacee53015533c343a45ff47e9b41b8.png]]
 E.g., add Carol AID to (presently) Alice+Bob Group
 
 ****** Communication sync to a newly added device
