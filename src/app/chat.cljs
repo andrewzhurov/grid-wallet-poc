@@ -36,7 +36,8 @@
             [garden.units :refer [px px- px+] :as gun]
             [garden.arithmetic :as ga]
             [garden.compiler]
-            ))
+
+            [app.io :as io]))
 
 (def message-padding (px 12))
 (def color-primary (gc/rgb [51 144 236]))
@@ -411,7 +412,8 @@
               (str "Issue LE credential to " issuee-name "?")))]
          (let [possible-reactions (if (= :incept kind)
                                     [[:propose #(do (at/add-event! topic-path {:event/tx [:propose proposal]})
-                                                    (ac/add-init-control-event! topic-path))]]
+                                                    (ac/add-init-control-event! topic-path)
+                                                    (io/create-mailbox! (atom topic-path)))]]
                                     [[:propose #(at/add-event! topic-path {:event/tx [:propose proposal]})]
                                      [:dispose #(at/add-event! topic-path {:event/tx [:dispose proposal]})]])]
            [:div.message-reactions
@@ -608,7 +610,8 @@
                                                                       :tooltip-title "Propose Incept ID"
                                                                       :tooltip-open  true
                                                                       :on-click      #(do (at/add-event! topic-path {hg/tx [:propose [:incept]]})
-                                                                                          (ac/add-init-control-event! topic-path))}))
+                                                                                          (ac/add-init-control-event! topic-path)
+                                                                                          (io/create-mailbox! (atom topic-path)))}))
                                                 (when incepted?
                                                   (speed-dial-action {:key           :propose-incept-id
                                                                       :icon          (hga-icons/icon :solid :certificate :color "black")

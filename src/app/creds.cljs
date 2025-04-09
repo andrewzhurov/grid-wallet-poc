@@ -945,8 +945,61 @@
    (actrl/init-control! topic-path)
    (let [k  (actrl/topic-path->k topic-path)
          nk (actrl/topic-path->nk topic-path)]
-     (at/add-event! topic-path {hg/tx [:init-control k (hash nk)]})
-     (at/add-event! topic-path {hg/tx [:assoc-did-peer @as/*my-did-peer]}))))
+     (at/add-event! topic-path {hg/tx [:init-control k (hash nk)]}))))
+
+(deflda *topic-path->my-informed-did-peer [at/*topic-path->projected-db actrl/*topic-path->init-key]
+  (fn [topic-path->projected-db topic-path->init-key]
+    (->> topic-path->projected-db
+         (into (hash-map)
+               (comp (map (fn [[topic-path projected-db]]
+                            (let [init-key (-> topic-path topic-path->init-key)]
+                              [topic-path (get-in projected-db [:init-key->did-peer init-key])])))
+                     (filter (comp some? second)))))))
+
+
+(declare init-control-participated?)
+(deflda *control-participated-topic-paths [as/*topic-path->tip-taped]
+  (fn [topic-path->tip-taped]
+    (->> topic-path->tip-taped
+         (into #{}
+               (comp (filter (comp init-control-participated? second))
+                     (map first))))))
+
+(deflda *topic-path->novel-did-peer [as/*topic-path->did-peer *topic-path->my-informed-did-peer *control-participated-topic-paths]
+  (fn [topic-path->did-peer topic-path->my-informed-did-peer control-participated-topic-paths]
+    (l [:*topic-path->novel-did-peer topic-path->did-peer topic-path->my-informed-did-peer control-participated-topic-paths])
+    (->> topic-path->did-peer
+         (into (hash-map)
+               (filter (fn [[topic-path did-peer]]
+                         (and (control-participated-topic-paths topic-path) ;; ugly, (for cases when [:device-topic] haven't been created yet, but we got mailbox ready)
+                              (not= did-peer (-> topic-path topic-path->my-informed-did-peer)))))))))
+
+(add-watch *topic-path->novel-did-peer ::inform-of-novel-did-peer
+           (fn [_ _ _ topic-path->novel-did-peer]
+             (l [::inform-of-novel-did-peer topic-path->novel-did-peer])
+             (when (not-empty topic-path->novel-did-peer)
+               (swap! as/*topic-path->tip-taped
+                      (fn [topic-path->tip-taped]
+                        ;; events are added atomically, to not trigger watches on partialy updated state
+                        ;; E.g., were there 2 novel-did-peers:
+                        ;; 1. (cb1) triggered
+                        ;; 2. (cb1) 1st assoced
+                        ;; 3. (cb2) triggered (as *topic-path->my-informed-did-peer changed)
+                        ;; 4. (cb2) 2nd assoced
+                        ;; 5. (cb1) 2nd assoced
+                        (->> topic-path->novel-did-peer
+                             (reduce (fn [topic-path->tip-taped-acc [topic-path novel-did-peer]]
+                                       (at/add-event topic-path->tip-taped-acc topic-path {hg/tx [:assoc-did-peer novel-did-peer]}))
+                                     topic-path->tip-taped)))))))
+
+;; alternative
+#_
+(add-watch as/*topic-path->did-peer ::assoc-did-peer-once-created
+           (fn [_ _ old-topic-path->did-peer new-topic-path->did-peer]
+             (let [novel-topic-path->did-peer (->> new-topic-path->did-peer
+                                                   (filter (fn [[topic-path did-peer]] (not= did-peer (get old-topic-path->did-peer topic-path)))))]
+               (for [[topic-path did-peer] novel-topic-path->did-peer]
+                 (at/add-event! topic-path {hg/tx [:assoc-did-peer did-peer]})))))
 
 (defn add-rotate-control-event!
   ([] (add-init-control-event! @as/*selected-topic-path))

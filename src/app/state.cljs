@@ -13,10 +13,6 @@
 
 
 (defonce *browsing (atom (hash-map)))
-(defonce *connected? (atom false))
-
-(defonce *my-did-peer (atom nil))
-(defonce *did->did-doc (atom (hash-map)))
 
 (defonce *selected-page (rum/cursor *browsing :page))
 (defonce *selected-topic-path (atom []))
@@ -32,6 +28,10 @@
       {:mutual-contacts  mutual-contacts
        :pending-inbound  pending-inbound
        :pending-outbound pending-outbound})))
+
+(defonce *topic-path->mailbox (atom (hash-map)))
+(deflda *topic-path->did-peer [*topic-path->mailbox]
+  (filter-map-vals :mailbox/did-peer))
 
 ;; *my-aid-path->topic->tip-taped
 ;; Pro: easier to resolve from nav data
