@@ -127,8 +127,8 @@
                 (letl2 [other-creator-member-init-key (nth (:member-init-keys-log db) other-creator)
                         other-creator-did-peer        (get-in db [:member-init-key->did-peer other-creator-member-init-key])]
                   (l [:sending-g$-to g$ other-creator other-creator-member-init-key other-creator-did-peer])
-                  (send-message other-creator-did-peer {:type "https://didcomm.org/hashgraph/1.0/g$",
-                                                        :body g$}))))))
+                  (send-message topic-path other-creator-did-peer {:type "https://didcomm.org/hashgraph/1.0/g$",
+                                                                   :body g$}))))))
         (when-not @*sent?
           (l [:all-sent topic-path new-tip-taped])
           (l (swap! *topic-path->all-sent-tip assoc topic-path new-tip-taped)))))))
@@ -175,7 +175,7 @@
 
 (m/=> ?tip-taped+g$->?grafted-tip-taped [:=> [:cat [:maybe :tip-taped] :g$] [:maybe :tip-taped]])
 (defn ?tip-taped+g$->?grafted-tip-taped [?tip-taped g$]
-  (if-let [novel-events (second (hgt/?<<tip+g$->?novel-events ?tip-taped g$))]
+  (when-let [novel-events (second (hgt/?<<tip+g$->?novel-events ?tip-taped g$))]
     (let [graftee           (get g$ hgt/g$-graftee)
           grafter-tip       (-> novel-events reverse first)
           ack-event         (cond-> {hg/creator       graftee

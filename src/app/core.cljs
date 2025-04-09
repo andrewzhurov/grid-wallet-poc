@@ -5,7 +5,7 @@
             [hashgraph.utils.js-map-test]
             [hashgraph.main :as hg]
             [hashgraph.schemas :as hgs]
-            [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl] :as utils]
+            [hashgraph.utils.core :refer [hash=] :refer-macros [defn* l letl if-let*] :as utils]
             [hashgraph.utils.core-test]
 
             [app.material]
@@ -20,7 +20,7 @@
             [rum.cursor]
             [rum.core :as rum]
             [pjstadig.humane-test-output]
-            [clojure.test :refer [run-tests run-all-tests empty-env]]
+            [clojure.test :refer [run-test run-tests run-all-tests empty-env]]
             [malli.instrument :as mi]
             [malli.clj-kondo :as mc]
             [malli.dev.cljs :as dev]

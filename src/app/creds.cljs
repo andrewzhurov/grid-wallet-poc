@@ -874,69 +874,69 @@
                                        :as   db}]
   (if (empty? member-aids$)
     db
-    (letl2 [new-member-aids$-log                (vec-union member-aids$-log member-aids$)
-            new-member-aid$->member-init-keys   (merge (select-keys member-aid$->member-init-keys member-aids$)
-                                                       (->> (select-keys aid$->ke member-aids$)
-                                                            (filter-map-vals (fn [member-ke]
-                                                                               (when-let* [member-db                    (-> member-ke ke->pub-db)
-                                                                                           member-init-key->signing-key (-> member-db db->init-key->signing-key)
-                                                                                           signing-key->member-init-key (-> member-init-key->signing-key reverse-map)
-                                                                                           signing-keys                 (-> member-ke ->latest-establishment-key-event :key-event/signing-keys)]
-                                                                                          (->> signing-keys
-                                                                                               (map signing-key->member-init-key)
-                                                                                               (filter some?)
-                                                                                               vec
-                                                                                               not-empty))))))
+    (let [new-member-aids$-log              (vec-union member-aids$-log member-aids$)
+          new-member-aid$->member-init-keys (merge (select-keys member-aid$->member-init-keys member-aids$)
+                                                   (->> (select-keys aid$->ke member-aids$)
+                                                        (filter-map-vals (fn [member-ke]
+                                                                           (when-let* [member-db                    (-> member-ke ke->pub-db)
+                                                                                       member-init-key->signing-key (-> member-db db->init-key->signing-key)
+                                                                                       signing-key->member-init-key (-> member-init-key->signing-key reverse-map)
+                                                                                       signing-keys                 (-> member-ke ->latest-establishment-key-event :key-event/signing-keys)]
+                                                                                      (->> signing-keys
+                                                                                           (map signing-key->member-init-key)
+                                                                                           (filter some?)
+                                                                                           vec
+                                                                                           not-empty))))))
 
-            new-member-aid$->member-init-keys-log (merge-with vec-union
-                                                              member-aid$->member-init-keys-log
-                                                              new-member-aid$->member-init-keys)
+          new-member-aid$->member-init-keys-log (merge-with vec-union
+                                                            member-aid$->member-init-keys-log
+                                                            new-member-aid$->member-init-keys)
 
-            new-member-aid$->signing-weight (->> member-aids$
-                                                 (into (hash-map) (map (fn [member-aid] [member-aid (case (count member-aids$)
-                                                                                                      1 [1 1]
-                                                                                                      [1 2])]))))
+          new-member-aid$->signing-weight (->> member-aids$
+                                               (into (hash-map) (map (fn [member-aid] [member-aid (case (count member-aids$)
+                                                                                                    1 [1 1]
+                                                                                                    [1 2])]))))
 
 
-            new-member-aid$->threshold (merge (select-keys member-aid$->threshold member-aids$)
-                                              (->> (select-keys aid$->ke member-aids$)
-                                                   (filter-map-vals (fn [ke] (-> ke ->latest-establishment-key-event :key-event/threshold)))))
+          new-member-aid$->threshold (merge (select-keys member-aid$->threshold member-aids$)
+                                            (->> (select-keys aid$->ke member-aids$)
+                                                 (filter-map-vals (fn [ke] (-> ke ->latest-establishment-key-event :key-event/threshold)))))
 
-            new-threshold   (db->threshold {:member-aids$                member-aids$
-                                            :member-aid$->signing-weight new-member-aid$->signing-weight
-                                            :member-aid$->threshold      new-member-aid$->threshold})
-            #_#_total-stake hg/total-stake #_ (->> member-aid->signing-weight vals (reduce (fn [acc [nom denom]] (+ acc (/ nom denom))) 0))
+          new-threshold   (db->threshold {:member-aids$                member-aids$
+                                          :member-aid$->signing-weight new-member-aid$->signing-weight
+                                          :member-aid$->threshold      new-member-aid$->threshold})
+          #_#_total-stake hg/total-stake #_ (->> member-aid->signing-weight vals (reduce (fn [acc [nom denom]] (+ acc (/ nom denom))) 0))
 
-            new-member-init-keys          (->> member-aids$ (mapcat new-member-aid$->member-init-keys) vec)
-            new-member-init-keys-log      (vec-union member-init-keys-log new-member-init-keys)
+          new-member-init-keys     (->> member-aids$ (mapcat new-member-aid$->member-init-keys) vec)
+          new-member-init-keys-log (vec-union member-init-keys-log new-member-init-keys)
 
-            fraction-paths                (-> new-threshold threshold->fractions-paths) ;; remove?
-            key-weights                   (-> new-threshold threshold->key-weights)
-            total-keys-weight             (->> key-weights (reduce +))
-            rel-key-weights               (->> key-weights (mapv (fn [key-weight] (/ key-weight total-keys-weight))))
-            new-active-creators           (->> new-member-init-keys (into #{} (map (fn [member-init-key] (-> (-indexOf new-member-init-keys-log member-init-key) not-neg (or (throw (ex-info "can't find member-init-key in member-init-keys-log on db-propagation" {:member-init-key member-init-key :new-member-init-keys-log new-member-init-keys-log :db db}))))))))
-            new-active-creator->stake     (->> new-active-creators
-                                               (into (hash-map) (map (fn [new-active-creator]
-                                                                       (let [rel-key-weight (nth rel-key-weights (-indexOf new-member-init-keys (nth new-member-init-keys-log new-active-creator)))
-                                                                             stake          (-> hg/total-stake (* rel-key-weight))]
-                                                                         [new-active-creator stake])))))
-            new-member-init-key->did-peer (or (merge member-init-key->did-peer
-                                                     (->> (select-keys aid$->ke member-aids$)
-                                                          (map (fn [[_ member-ke]] (-> member-ke ke->pub-db :init-key->did-peer)))
-                                                          (apply merge)))
-                                              (hash-map))
-            db-propagation               {:member-aids$-log                  new-member-aids$-log
-                                          :member-aid$->member-init-keys     new-member-aid$->member-init-keys
-                                          :member-aid$->member-init-keys-log new-member-aid$->member-init-keys-log
-                                          :member-aid$->signing-weight       new-member-aid$->signing-weight
-                                          :member-aid$->threshold            new-member-aid$->threshold
-                                          :threshold                         new-threshold
-                                          :member-init-keys                  new-member-init-keys
-                                          :member-init-keys-log              new-member-init-keys-log
-                                          :member-init-key->did-peer         new-member-init-key->did-peer
-                                          :active-creators                   new-active-creators
-                                          :stake-map                         new-active-creator->stake}]
-           (merge db db-propagation))))
+          fraction-paths                (-> new-threshold threshold->fractions-paths) ;; remove?
+          key-weights                   (-> new-threshold threshold->key-weights)
+          total-keys-weight             (->> key-weights (reduce +))
+          rel-key-weights               (->> key-weights (mapv (fn [key-weight] (/ key-weight total-keys-weight))))
+          new-active-creators           (->> new-member-init-keys (into #{} (map (fn [member-init-key] (-> (-indexOf new-member-init-keys-log member-init-key) not-neg (or (throw (ex-info "can't find member-init-key in member-init-keys-log on db-propagation" {:member-init-key member-init-key :new-member-init-keys-log new-member-init-keys-log :db db}))))))))
+          new-active-creator->stake     (->> new-active-creators
+                                             (into (hash-map) (map (fn [new-active-creator]
+                                                                     (let [rel-key-weight (nth rel-key-weights (-indexOf new-member-init-keys (nth new-member-init-keys-log new-active-creator)))
+                                                                           stake          (-> hg/total-stake (* rel-key-weight))]
+                                                                       [new-active-creator stake])))))
+          new-member-init-key->did-peer (or (merge member-init-key->did-peer
+                                                   (->> (select-keys aid$->ke member-aids$)
+                                                        (map (fn [[_ member-ke]] (-> member-ke ke->pub-db :init-key->did-peer)))
+                                                        (apply merge)))
+                                            (hash-map))
+          db-propagation                {:member-aids$-log                  new-member-aids$-log
+                                         :member-aid$->member-init-keys     new-member-aid$->member-init-keys
+                                         :member-aid$->member-init-keys-log new-member-aid$->member-init-keys-log
+                                         :member-aid$->signing-weight       new-member-aid$->signing-weight
+                                         :member-aid$->threshold            new-member-aid$->threshold
+                                         :threshold                         new-threshold
+                                         :member-init-keys                  new-member-init-keys
+                                         :member-init-keys-log              new-member-init-keys-log
+                                         :member-init-key->did-peer         new-member-init-key->did-peer
+                                         :active-creators                   new-active-creators
+                                         :stake-map                         new-active-creator->stake}]
+      (merge db db-propagation))))
 
 
 (defn create-aided-topic! [my-aid-topic-path init-db*]
@@ -1016,7 +1016,6 @@
          nk (actrl/topic-path->nk topic-path)]
      (at/add-event! topic-path {:event/tx [:rotate-control k (hash nk)]}))))
 
-(declare evt->?ke)
 (defn incepted? [event]
   (-> event evt->?ke some?))
 
@@ -1581,7 +1580,6 @@
 (actrl/init-control! [:gleif])
 (def gleif-k0 (actrl/topic-path->k [:gleif]))
 (def gleif-k1 (actrl/topic-path->nk [:gleif]))
-(def gleif-k2 (actrl/topic-path->nnk [:gleif]))
 (def gleif-e0 {hg/creator       "gleif"
                hg/creation-time 0
                hg/topic         {:stake-map {"gleif" hg/total-stake}}
@@ -1593,6 +1591,8 @@
    hg/tx            [:propose [:issue gleif-acdc-qvi]]
    hg/self-parent   gleif-e0})
 
+(actrl/rotate-control! [:gleif])
+(def gleif-k2 (actrl/topic-path->nk [:gleif]))
 (def gleif-e2
   {hg/creator       gleif-k0
    hg/creation-time (.now js/Date)

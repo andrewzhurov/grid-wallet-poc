@@ -79,6 +79,7 @@ export const createAgent = ({ ondid, ondiddoc, onconnected, ondisconnected, onme
   }
 
   return {
+    worker,
     connect,
     disconnect,
     sendMessage,
