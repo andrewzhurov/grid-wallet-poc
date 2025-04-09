@@ -4,11 +4,11 @@
    [hashgraph.utils.lazy-derived-atom :refer [lazy-derived-atom] :refer-macros [deflda]]
    [app.state :as as]
    [rum.core :as rum]))
-rum/react
+
 (defonce *topic-path->control (atom {[] {:control/keys [(str "root-" (hash (random-uuid)) "-k")]}}))
 
-(deflda *topic-path->init-key [*topic-path->control as/*my-did-peer]
-  (fn [topic-path->control my-did-peer]
+(deflda *topic-path->init-key [*topic-path->control]
+  (fn [topic-path->control]
     (->> topic-path->control
          (map-vals (fn [control] (-> control :control/keys first))))))
 
@@ -52,10 +52,17 @@ rum/react
 (defn init-control! [topic-path]
   (let [control {:control/idx  0
                  :control/keys [(gen-key topic-path 0)
-                                (gen-key topic-path 1)
-                                (gen-key topic-path 2)]}]
+                                (gen-key topic-path 1)]}]
     (-> (swap! *topic-path->control update topic-path  (fn [?current-control] (or ?current-control control)))
         (get topic-path))))
+
+(defn rotate-control! [topic-path]
+  (-> (swap! *topic-path->control update topic-path
+             (fn [control]
+               (-> control
+                   (update :control/idx inc)
+                   (update :control/keys conj (gen-key topic-path (count (:control/keys control)))))))
+      (get topic-path)))
 
 (defn topic-path->control [topic-path]
   (or (@*topic-path->control topic-path)
@@ -75,11 +82,3 @@ rum/react
   (let [control (topic-path->control topic-path)]
     (or (nth (:control/keys control) (inc (inc (:control/idx control))) nil)
         (throw (ex-info "no nnk is found for topic-path" {:topic-path topic-path :*topic-path->control @*topic-path->control})))))
-
-(defn rotate-control! [topic-path]
-  (-> (swap! *topic-path->control update topic-path
-             (fn [control]
-               (-> control
-                   (update :control/idx inc)
-                   (update :control/keys conj (gen-key topic-path (count (:control/keys control)))))))
-      (get topic-path)))
