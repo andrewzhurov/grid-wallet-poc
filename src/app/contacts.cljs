@@ -64,8 +64,10 @@
                               :right         "0px"
                               :width         "12px"
                               :height        "12px"
-                              :border-radius "50%"}
-      [:&.connected {:background-color "green"}]
+                              :border-radius "50%"
+                              :cursor        :pointer
+                              :transition    "background-color 0.2s"}
+      [:&.connected {:background-color "#9aedd8"}]
       [:&.disconnected {:background-color "gray"}]]
 
      [:.aid-certified {:position       :absolute
@@ -300,10 +302,10 @@
 (defc my-aid-topic-path-view < rum/reactive
   {:key-fn (fn [my-aid-topic-path] (hash my-aid-topic-path))}
   [my-aid-topic-path selected?]
-  (let [connectivity? (rum/react as/*connected?)
-        my-aid#       (rum/react (rum/cursor ac/*topic-path->my-aid# my-aid-topic-path))
-        my-aid-name   (rum/react (rum/cursor ac/*aid#->aid-name my-aid#))
-        group-aid?    (rum/react (rum/cursor ac/*aid#->group-aid? my-aid#))]
+  (let [connected?  (rum/react (rum/cursor-in as/*topic-path->mailbox [my-aid-topic-path :mailbox/connected?]))
+        my-aid#     (rum/react (rum/cursor ac/*topic-path->my-aid# my-aid-topic-path))
+        my-aid-name (rum/react (rum/cursor ac/*aid#->aid-name my-aid#))
+        group-aid?  (rum/react (rum/cursor ac/*aid#->group-aid? my-aid#))]
     [:div.contact {:on-click #(do (reset! as/*selected-topic-path my-aid-topic-path)
                                   (reset! as/*browsing {:page :topic}))
                    :class    [(when group-aid? "group-aid")
@@ -311,9 +313,14 @@
      [:div.contact-name
       my-aid-name
       (atfu/topic-feed-unread-count-bubble-view my-aid-topic-path)
-      #_
-      (when (not (nil? connectivity?))
-        [:div.contact-connectivity {:class (if connectivity? "connected" "disconnected")}])
+
+      (let [{:mailbox/keys [connected? agent]} (rum/react (rum/cursor as/*topic-path->mailbox my-aid-topic-path))
+            disconnect!                        #(do (.stopPropagation %) (.disconnect agent))
+            connect!                           #(do (.stopPropagation %) (.connect agent))]
+        [:div.contact-connectivity {:class    (if connected? "connected" "disconnected")
+                                    :title    (if connected? "Connected. Disconnect?" "Disconnected. Reconnect?")
+                                    :on-click (if connected? disconnect! connect!)}])
+
       #_
       (aid-attributions-view my-aid)
       (connect-invite-view my-aid#)]]))
