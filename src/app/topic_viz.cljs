@@ -26,6 +26,7 @@
    [clojure.test :refer [deftest testing is are run-tests]]
    [garden.selectors :as gs]
    [garden.units :refer [px px- px+ px-div] :as gun]
+   [garden.color :as gc]
    [malli.core :as m]
    [goog.object :as gobject]))
 
@@ -77,7 +78,15 @@
          (into (hash-map) (map (fn [[topic-path viz-nr-creators#]]
                                  [topic-path (set/difference viz-nr-creators# (-> topic-path topic-path->viz-active-creators#))]))))))
 
-(deflda *topic-path->viz-member-aid-info [*topic-path->viz-projected-cr-est *topic-path->viz-pending-creators#]
+(deflda *topic-path->viz-member-aid-info [*topic-path->viz-cr-est *topic-path->viz-pending-creators#]
+  (fn [topic-path->viz-cr-est topic-path->viz-pending-creators#]
+    (->> topic-path->viz-cr-est
+         (into (hash-map) (map (fn [[topic-path viz-cr-est]]
+                                 (let [member-init-keys-log     (-> viz-cr-est hg/cr->db :member-init-keys-log)
+                                       pending-member-init-keys (->> topic-path topic-path->viz-pending-creators# (map (fn [viz-pending-creator] (nth member-init-keys-log viz-pending-creator))))]
+                                   [topic-path (ac/cr-est+pending-member-init-keys#->member-aid-info viz-cr-est pending-member-init-keys)])))))))
+
+(deflda *topic-path->viz-projected-member-aid-info [*topic-path->viz-projected-cr-est *topic-path->viz-pending-creators#]
   (fn [topic-path->viz-projected-cr-est topic-path->viz-pending-creators#]
     (->> topic-path->viz-projected-cr-est
          (into (hash-map) (map (fn [[topic-path viz-projected-cr-est]]
@@ -85,11 +94,15 @@
                                        pending-member-init-keys (->> topic-path topic-path->viz-pending-creators# (map (fn [viz-pending-creator] (nth member-init-keys-log viz-pending-creator))))]
                                    [topic-path (ac/cr-est+pending-member-init-keys#->member-aid-info viz-projected-cr-est pending-member-init-keys)])))))))
 
-(rum/derived-atom [*topic-path->viz-member-aid-info] ::derive-*topic-path->creator->color
+(deflda *topic-path->creator->color [*topic-path->viz-member-aid-info]
   (map-vals (fn [{:member-aid-info/keys [creator->member-aid-info]}]
               (->> creator->member-aid-info
-                   (map-vals :member-aid-info/color))))
-  {:ref hga-page/*topic-path->creator->color})
+                   (map-vals :member-aid-info/color)))))
+
+(deflda *topic-path->creator->projected-color [*topic-path->viz-projected-member-aid-info]
+  (map-vals (fn [{:member-aid-info/keys [creator->member-aid-info]}]
+              (->> creator->member-aid-info
+                   (map-vals :member-aid-info/color)))))
 
 
 
@@ -106,12 +119,11 @@
 
 (defda *topic-path->creator->viz-x [*topic-path->viz-member-aid-info]
   (fn [topic-path->viz-member-aid-info]
-    (l [::derive-*topic-path->creator->viz-x topic-path->viz-member-aid-info])
-    (l (->> topic-path->viz-member-aid-info
-            (map-vals (fn [viz-member-aid-info]
-                        (->> viz-member-aid-info
-                             :member-aid-info/creator->member-aid-info
-                             (map-vals (fn [{:member-aid-info/keys [pos-x]}] (hga-view/idx->x pos-x))))))))))
+    (->> topic-path->viz-member-aid-info
+         (map-vals (fn [viz-member-aid-info]
+                     (->> viz-member-aid-info
+                          :member-aid-info/creator->member-aid-info
+                          (map-vals (fn [{:member-aid-info/keys [pos-x]}] (hga-view/idx->x pos-x)))))))))
 
 #_
 (set! hga-view/*topic-path->creator->viz-x *topic-path->creator->viz-x)
@@ -177,7 +189,7 @@
 
             old-viz-cr         (get @*topic-path->viz-cr topic-path)
             old-creator->viz-x (get @*topic-path->creator->viz-x topic-path)]
-        ;; first runs transitions, then will derive viz-cr, member-aid-info, creator->viz-x, running cr-transitions and re-position transitions
+        ;; first derives viz-cr, member-aid-info, creator->viz-x, then runs transitions
         (when (or (not-empty just-played<)
                   (not-empty tips-to-behind<))
           (swap! *topic-path->tip-playback assoc topic-path {:tips-behind>   new-tips-behind>
@@ -465,13 +477,22 @@
 
 (defc topic-path-viz* < rum/static rum/reactive
   [topic-path]
-  (let [tip-taped        (rum/react (rum/cursor as/*topic-path->tip-taped topic-path))
-        viz-height       (-> tip-taped hga-view/evt->viz-height)
-        ?member-aid-info (rum/react (rum/cursor *topic-path->viz-member-aid-info topic-path))
-        viz-width        (-> (or (some-> ?member-aid-info :member-aid-info/creator->member-aid-info count) 1)
-                             (* hga-view/hgs-size))]
+  (let [tip-taped           (rum/react (rum/cursor as/*topic-path->tip-taped topic-path))
+        viz-height          (-> tip-taped hga-view/evt->viz-height)
+        contact-topic-path? (contains? (rum/react ac/*contact-topic-paths) topic-path)
+        ?member-aid-info    (if contact-topic-path?
+                              (rum/react (rum/cursor *topic-path->viz-projected-member-aid-info topic-path)) ;; handy UX on contact topic, where the other side shares KE and we see its member-aid info right away
+                              (rum/react (rum/cursor *topic-path->viz-member-aid-info topic-path))) ;; handy on group topics, when we see new member only after it's been consented (and new messages will be sent to it)
+        creator->color      (or (if contact-topic-path?
+                                  (rum/react (rum/cursor *topic-path->creator->projected-color topic-path))
+                                  (rum/react (rum/cursor *topic-path->creator->color topic-path)))
+                                ;; need this hack as render can be called with old rendered events and new (absent) creator->color
+                                ;; jeez we need a proper run-time for these compute DAGs, callbacks on atoms are not enough.
+                                (constantly (gc/rgba [120 120 120 1])))
+        viz-width           (-> (or (some-> ?member-aid-info :member-aid-info/creator->member-aid-info count) 1)
+                                (* hga-view/hgs-size))]
     [:<>
-     (hga-page/viz topic-path viz-width viz-height)
+     (hga-page/viz topic-path creator->color viz-width viz-height)
      (when ?member-aid-info
        (aa/topic-path-aids-view topic-path viz-width ?member-aid-info))]))
 
