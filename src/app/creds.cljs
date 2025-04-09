@@ -1663,18 +1663,19 @@
 
 (declare *topic-path->attributed-acdcs)
 (declare *my-aids)
-(add-watch as/*topic-path->tip-taped ::participate-in-init-control-when-agreed
+(add-watch as/*topic-path->tip-taped ::participate-in-init-control-when-in-AID-group
            (fn [_ _ _ topic-path->tip-taped]
              (doseq [[topic-path tip-taped] topic-path->tip-taped]
                (when (and (init-control-initiated? tip-taped)
                           (-> tip-taped evt->?ke) ;; only when incepted, hacky, will also trigger when new id gets incepted and you did not consent
                           (not (init-control-participated? tip-taped))
                           #_(when-let* [attributed-acdcs (get @*topic-path->attributed-acdcs topic-path)
-                                      my-aids          (set @*my-aids)]
-                            (->> attributed-acdcs
-                                 (some (fn [acdc] (and (= :acdc-join-invite-accepted (:acdc/schema acdc))
-                                                       (contains? my-aids (:acdc/issuer acdc))))))))
-                 (add-init-control-event! topic-path)))))
+                                        my-aids          (set @*my-aids)]
+                              (->> attributed-acdcs
+                                   (some (fn [acdc] (and (= :acdc-join-invite-accepted (:acdc/schema acdc))
+                                                         (contains? my-aids (:acdc/issuer acdc))))))))
+                 (add-init-control-event! topic-path)
+                 (io/create-mailbox! (atom topic-path))))))
 
 (add-watch as/*topic-path->tip-taped ::participate-in-wanted-rotations
            (fn [_ _ _ topic-path->tip-taped]
