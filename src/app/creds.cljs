@@ -940,11 +940,12 @@
 
 
 (defn create-aided-topic! [my-aid-topic-path init-db*]
-  (let [topic (db-with-aid-control-propagated init-db*)]
-    (swap! as/*selected-topic-path conjv topic)
+  (let [topic       (db-with-aid-control-propagated init-db*)
+        aided-topic (-> (at/add-event! (vec (conj my-aid-topic-path topic)) {:event/topic topic})
+                        (get hg/topic))]
+    (reset! as/*selected-topic-path (conj my-aid-topic-path topic))
     (reset! as/*browsing {:page :topic})
-    (-> (at/add-event! (vec (conj my-aid-topic-path topic)) {:event/topic topic})
-        (get hg/topic))))
+    aided-topic))
 
 (defn add-init-control-event!
   ([] (add-init-control-event! @as/*selected-topic-path))
