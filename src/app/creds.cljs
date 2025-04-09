@@ -691,7 +691,13 @@
         (= 2 (aid->seed aid-a2)))))
 
 (defn* ^:memoizing aid->color [aid]
-  (->> aid aid->seed (get hg-members/palette1)))
+  (case (some-> aid ke->pub-db :topic-name first str)
+    "A" (hg-members/palette1 1)
+    "B" (hg-members/palette1 2)
+    "C" (hg-members/palette1 3)
+    "D" (hg-members/palette1 4)
+    "E" (hg-members/palette1 5)
+    (->> aid aid->seed (get hg-members/palette1))))
 (set! hga-page/aid->color aid->color)
 
 ;; A1               A2
