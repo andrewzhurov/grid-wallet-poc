@@ -20,26 +20,28 @@
 (defn tape->creators [tape] (-> tape tape->stake-map keys))
 
 
+(defn add-event [topic-path->tip-taped topic-path partial-evt]
+  (let [?tip-taped           (get topic-path->tip-taped topic-path)
+        member-init-keys-log (or (-> ?tip-taped hg/evt->db :member-init-keys-log)
+                                 (-> partial-evt hg/topic :member-init-keys-log)
+                                 (throw (ex-info "no member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt})))
+        my-member-init-key   (or (actrl/topic-path->member-init-key topic-path)
+                                 (throw (ex-info "no member-init-key for topic-path" {:topic-path topic-path :partial-evt partial-evt :?tip-taped ?tip-taped})))
+        my-creator           (or (not-neg (-indexOf member-init-keys-log my-member-init-key))
+                                 (throw (ex-info "my-member-init-key is not in member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt :member-init-keys-log member-init-keys-log :my-member-init-key my-member-init-key})))
+        new-tip              (cond-> (merge partial-evt
+                                            {hg/creator       my-creator
+                                             hg/creation-time (.now js/Date)})
+                               ?tip-taped (assoc hg/self-parent ?tip-taped))
+        _                    (hash new-tip)
+        novel-events         [new-tip]
+        new-tip-taped        (hgt/tip+novel-events->tip-taped new-tip novel-events)]
+    (assoc topic-path->tip-taped topic-path new-tip-taped)))
+
 (defn add-event!
   ([partial-evt] (add-event! @as/*selected-topic-path partial-evt))
   ([topic-path partial-evt]
-   (-> (swap! as/*topic-path->tip-taped update topic-path
-              (fn [?tip-taped]
-                (let [member-init-keys-log (or (-> ?tip-taped hg/evt->db :member-init-keys-log)
-                                               (-> partial-evt hg/topic :member-init-keys-log)
-                                               (throw (ex-info "no member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt})))
-                      my-member-init-key   (or (actrl/topic-path->member-init-key topic-path)
-                                               (throw (ex-info "no member-init-key for topic-path" {:topic-path topic-path :partial-evt partial-evt :?tip-taped ?tip-taped})))
-                      my-creator           (or (not-neg (-indexOf member-init-keys-log my-member-init-key))
-                                               (throw (ex-info "my-member-init-key is not in member-init-keys-log on add-event!" {:topic-path topic-path :?tip-taped ?tip-taped :partial-evt partial-evt :member-init-keys-log member-init-keys-log :my-member-init-key my-member-init-key})))
-                      new-tip              (cond-> (merge partial-evt
-                                                          {hg/creator       my-creator
-                                                           hg/creation-time (.now js/Date)})
-                                             ?tip-taped (assoc hg/self-parent ?tip-taped))
-                      _                    (hash new-tip)
-                      novel-events         [new-tip]
-                      new-tip-taped        (hgt/tip+novel-events->tip-taped new-tip novel-events)]
-                  new-tip-taped)))
+   (-> (swap! as/*topic-path->tip-taped add-event topic-path partial-evt)
        (get topic-path))))
 
 (hg/reg-tx-handler! :set-topic-name
