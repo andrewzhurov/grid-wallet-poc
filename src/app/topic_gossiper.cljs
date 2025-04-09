@@ -52,7 +52,7 @@
                            (nl :not-sybil?
                                (-> new-tip-taped hg/event->creator->tips (get other-creator) count (<= 1)))
 
-                           (or (nl :know-other-creator-learned-sent-tip?
+                           #_(or (nl :know-other-creator-learned-sent-tip?
                                    (some-> other-creator
                                            creator->unique-tip
                                            hg/event->creator->unique-tip
