@@ -185,23 +185,21 @@
                               ?tip-taped (assoc hg/self-parent ?tip-taped))
           novel-tape-events (conj (vec novel-events) ack-event)
           ack-event-taped   (hgt/tip+novel-events->tip-taped ack-event novel-tape-events)]
-      ack-event-taped)
-    (do (l ["nothing to graft atop ?tip-taped in g$" ?tip-taped g$])
-        ?tip-taped)))
+      ack-event-taped)))
 
 (reg< "https://didcomm.org/hashgraph/1.0/g$"
-      (fn [{g$ :body}]
-        (l [:received-g$ g$])
+      (fn [aid-topic-path {g$ :body :as graft-message}]
+        (l [:received-g$ g$ graft-message])
         (let [?known-topic            (@as/*topic-hash->topic (g$ hgt/g$-topic-hash))
               topic                   (or ?known-topic
                                           (hgt/g$->?topic g$)
                                           (throw (ex-info "can't find topic of g$" {:g$ g$})))
               graftee-member-init-key (get g$ hgt/g$-graftee-member-init-key)
-              member-topic-path       (actrl/init-key->topic-path graftee-member-init-key)
-              topic-path              (conj member-topic-path topic)]
-          (swap! (rum/cursor as/*topic-path->tip-taped topic-path)
-                 (fn [?tip-taped]
-                   (?tip-taped+g$->?grafted-tip-taped ?tip-taped g$))))))
+              topic-path              (conj aid-topic-path topic)
+              ?tip-taped              @(rum/cursor as/*topic-path->tip-taped topic-path)]
+
+          (when-let [novel-tip-taped (?tip-taped+g$->?grafted-tip-taped ?tip-taped g$)]
+            (swap! as/*topic-path->tip-taped assoc topic-path novel-tip-taped)))))
 
 #_
 (defn broadcast-topic! [topic]
