@@ -41,9 +41,9 @@
 
 (def message-padding (px 12))
 (def color-primary (gc/rgb [51 144 236]))
-(def color-primary-lighter (gc/lighten color-primary 20))
-(def color-primary-lightest (gc/lighten color-primary 30))
-(def color-primary-lightest2 (gc/lighten color-primary 40))
+(def color-primary-lighter (gc/lighten color-primary 15))
+(def color-primary-lightest (gc/lighten color-primary 20))
+(def color-primary-lightest2 (gc/lighten color-primary 27.5))
 (def action-button-offset (px 10))
 (def action-button-size   (px 56))
 (def messages-margin-x    (ga/+ action-button-size (ga/* 2 action-button-offset)))

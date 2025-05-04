@@ -42,7 +42,7 @@
      [:.contact-name {:border-radius "0%"}]]
     [:&.group-aid
      [:.contact-name {:border-radius "25%"}]]
-    [:&.selected-my-aid  styles/accent-style-light
+    [:&.selected-my-aid {:background-color (str styles/accent-color2 " !important")}
      [:.contact-name
       {:transform "scale(1.1)"}]]
     [:&:hover styles/accent-style
@@ -67,7 +67,7 @@
                               :border-radius "50%"
                               :cursor        :pointer
                               :transition    "background-color 0.2s"}
-      [:&.connected {:background-color "#9aedd8"}]
+      [:&.connected {:background-color "#5ec0a7"}]
       [:&.disconnected {:background-color "gray"}]]
 
      [:.aid-certified {:position       :absolute
