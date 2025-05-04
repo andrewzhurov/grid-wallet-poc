@@ -596,9 +596,9 @@
 
 (defn db->wanted-to-rotate? [{:keys [ke member-aids$ member-aid$->member-init-keys member-init-keys member-init-key->init-key init-key->known-control init-key->did-peer] :as db}]
   (and (some? ke)
-       member-aids$
-       member-aid$->member-init-keys
-       (->> member-aids$ (every? member-aid$->member-init-keys))
+       ;; member-aids$
+       ;; member-aid$->member-init-keys
+       ;; (->> member-aids$ (every? member-aid$->member-init-keys))
        member-init-key->init-key
        init-key->known-control
        (->> member-init-keys (every? member-init-key->init-key))
