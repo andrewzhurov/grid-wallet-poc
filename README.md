@@ -1,10 +1,10 @@
 # grID Wallet POC
 
-This is a Proof-of-Concept of a KERI Wallet for local-first environment, testing an approach of Group AID management via a Hashgraph/Blocklace/Merkle-DAG of device communication and a [distributed consensus algorithm](https://github.com/andrewzhurov/hashgraph), run locally by each peer.
+This is a Proof-of-Concept of a KERI Wallet for local-first environment, testing an approach of Group AID management via a Hashgraph/Blocklace/Merkle-DAG of device communication and a [distributed consensus algorithm](https://andrewzhurov.github.io/hashgraph/), run locally by each peer.
 
 Note: there are plenty of mocked things. No signing is done aside from DIDComm messages. A makeshift KERI-like impl is in use. Not a production-lined project, but a testbed for ideas.
 
-AID<->AID communication is presently facilitated by DIDComm, this repo makes use of [DIDComm](https://github.com/decentralized-identity/didcomm-demo).  
+AID<->AID communication is presently facilitated by [DIDComm](https://github.com/decentralized-identity/didcomm-demo).  
 In theory, isn't a hard dependency, some sort of a mailbox is desired.  
 
 POC features:  
